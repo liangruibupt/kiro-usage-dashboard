@@ -1,0 +1,22 @@
+{
+  "app": "python app.py",
+  "context": {
+    "deployRegion": "us-east-1",
+    "mockMode": "true",
+    "identityStoreId": "",
+    "identityStoreRegion": "",
+    "ssoInstanceArn": "",
+    "subscriptionAppArn": "",
+    "groupCsvBucket": "",
+    "groupCsvKey": "",
+    "kiroSourceBucket": "",
+    "kiroSourcePrefix": "reports",
+    "creditUnitPrice": "0.04",
+    "topN": "15",
+    "adminEmail": "admin@example.com",
+    "sesSender": "",
+    "reportRecipients": "",
+    "agentRuntimeArn": "",
+    "@aws-cdk/core:newStyleStackSynthesis": true
+  }
+}

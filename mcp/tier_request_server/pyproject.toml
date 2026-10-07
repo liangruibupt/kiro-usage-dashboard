@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tier-request-server"
+version = "0.1.0"
+description = "Kiro tier-request MCP server (stdio) — exposes request_tier_change to the Kiro IDE."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.2.0",
+]
+
+[project.scripts]
+kiro-tier-request = "tier_request_server.server:mcp.run"
+
+[tool.setuptools]
+packages = ["tier_request_server"]

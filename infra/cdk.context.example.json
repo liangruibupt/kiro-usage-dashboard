@@ -1,0 +1,21 @@
+{
+  "_说明": "这是 cdk.json 中 context 字段的填写示例。部署到你自己的账户时，把真实值填入 infra/cdk.json 的 context（本地改动，勿提交）。各字段含义见 README「部署」章节。mockMode=true 时可留空身份/源桶相关字段，直接用 mock 数据演示。",
+  "context": {
+    "deployRegion": "us-east-1",
+    "mockMode": "false",
+    "identityStoreId": "d-xxxxxxxxxx",
+    "identityStoreRegion": "us-east-1",
+    "ssoInstanceArn": "arn:aws:sso:::instance/ssoins-xxxxxxxxxxxxxxxx",
+    "subscriptionAppArn": "arn:aws:sso::<ACCOUNT_ID>:application/ssoins-xxxx/apl-xxxx",
+    "groupCsvBucket": "kiro-user-activity-<ACCOUNT_ID>",
+    "groupCsvKey": "lookup/user_groups.csv",
+    "kiroSourceBucket": "kiro-user-activity-<ACCOUNT_ID>",
+    "kiroSourcePrefix": "reports",
+    "creditUnitPrice": "0.04",
+    "topN": "15",
+    "adminEmail": "admin@example.com",
+    "sesSender": "verified-sender@example.com",
+    "reportRecipients": "admin@example.com",
+    "agentRuntimeArn": "arn:aws:bedrock-agentcore:<region>:<ACCOUNT_ID>:runtime/kiro_usage_agent-xxxxxxxxxx"
+  }
+}

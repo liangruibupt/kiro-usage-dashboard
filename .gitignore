@@ -1,0 +1,26 @@
+# CDK / 构建产物
+infra/cdk.out/
+infra/build/
+**/__pycache__/
+*.pyc
+
+# 前端
+frontend/node_modules/
+frontend/dist/
+
+# 本地环境
+.venv/
+.env
+
+# 生成的 mock 数据（由 tools/generate_mock_data.py 重建）
+mock/
+out.json
+
+# 本地真实配置备份（勿提交；含账号专属信息）
+infra/cdk.context.local.json
+frontend/public/config.local.json
+HANDOFF.local.md
+
+# Kiro 本地/运行时文件（个人编辑器设置与执行元数据，不入公开仓库）
+.kiro/settings/
+**/tasks.meta.json
