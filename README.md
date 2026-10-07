@@ -37,47 +37,11 @@
 后端收集 / 去重 / 存储并邮件通知；管理员在看板「调档申请」页处理（完成 / 驳回）并经 SES
 回执申请人。**定位为「收集与通知」，不自动执行真实调档**，最终由管理员人工审批。
 - 远程 MCP 端点（Streamable HTTP）托管在看板 API 上（`POST /mcp`），用户 IDE 只需配一个 URL + 请求头，**无需在本机安装任何代码**。
-- 详见下文「四、在 Kiro IDE 中使用调档申请」。
+- 详见下文「三、在 Kiro IDE 中使用调档申请」。
 
 ---
 
-## 二、架构概览
-
-前端静态站点（S3 + CloudFront）；看板 API 走 API Gateway HTTP API + Lambda(FastAPI/Mangum)；
-数据层用 S3(Parquet) + Glue + Athena + DynamoDB；登录用 Cognito；NL 问答 Agent 部署在
-Bedrock AgentCore Runtime。CDK（Python）分四个 Stack：
-
-| Stack | 内容 |
-|-------|------|
-| `KiroDash-Data` | S3(raw/curated/athena-results)、DynamoDB(部门表、调档申请表)、Glue DB+表、Athena workgroup、ETL / identity-sync / 月度报告 Lambda、共享 API key(Secrets Manager)、每日 EventBridge 定时 |
-| `KiroDash-Auth` | Cognito User Pool + App Client(OAuth2 PKCE) + Hosted UI 域 + `admins` 组 |
-| `KiroDash-Api`  | API Gateway HTTP API + FastAPI Lambda（JWT authorizer + 应用层 admins 组校验 + 远程 MCP 端点）|
-| `KiroDash-Web`  | S3 私有桶 + CloudFront + OAC，部署 `frontend/dist` |
-
-NL 问答 Agent（AgentCore Runtime）独立于 CDK，用 `backend/agent/deploy.py` 部署（可选）。
-
-### 目录结构
-
-```
-frontend/          React + TS + Vite + AntD + ECharts SPA（看板 + NL 对话框 + i18n）
-backend/
-  shared/          共享查询层（Athena 执行 + 派生字段口径）
-  api/             FastAPI on Lambda（看板 REST API + 远程 MCP 端点）
-  agent/           Strands Agent（AgentCore Runtime 容器）
-  etl/             每日 ETL Lambda（Kiro CSV → Parquet 长表）
-  identity_sync/   订阅名单/部门同步 Lambda
-  report/          月度报告 Lambda（SES）
-  tests/           后端单测（pytest）
-infra/             AWS CDK (Python) 多 Stack：Data / Auth / Api / Web
-mcp/               （历史）本地 stdio MCP server；现已改为托管的远程 MCP（见 backend/api/mcp_server.py）
-mock/              mock 数据（由 tools/generate_mock_data.py 生成，不入库）
-tools/             数据生成、校验等辅助脚本
-docs/              架构图
-```
-
----
-
-## 三、部署指南
+## 二、部署指南
 
 把整套看板部署到你自己的 AWS 账户。下文用占位符：账户 `<ACCOUNT_ID>`、区域 `<REGION>`、
 AWS CLI profile `<PROFILE>`。
@@ -160,7 +124,7 @@ aws lambda invoke --function-name <EtlFnName> --profile <PROFILE> --region <REGI
 ```
 
 ### 9. 创建首个管理员并登录
-见下文「五、管理员与用户」，然后访问 `https://<cloudfront-domain>` 登录。
+见下文「四、管理员与用户」，然后访问 `https://<cloudfront-domain>` 登录。
 
 ### 10.（可选）部署 NL 问答 Agent
 需 Docker 构建 arm64 容器推到 ECR，再用 `backend/agent/deploy.py` 部署到 AgentCore Runtime，
@@ -169,7 +133,7 @@ aws lambda invoke --function-name <EtlFnName> --profile <PROFILE> --region <REGI
 
 ---
 
-## 四、在 Kiro IDE 中使用调档申请（远程 MCP）
+## 三、在 Kiro IDE 中使用调档申请（远程 MCP）
 
 用户在自己的 Kiro IDE 配置一个远程 MCP server，即可用自然语言发起调档申请。
 **无需在本机安装任何代码**，只需在 `~/.kiro/settings/mcp.json`（或工作区 `.kiro/settings/mcp.json`）
@@ -203,7 +167,7 @@ aws lambda invoke --function-name <EtlFnName> --profile <PROFILE> --region <REGI
 
 ---
 
-## 五、管理员与用户
+## 四、管理员与用户
 
 看板登录用户 = Cognito User Pool 里的用户，且必须在 `admins` 组（否则接口 403）。
 User Pool 已关闭自助注册，由管理员创建用户。密码策略：≥12 位，含大小写、数字、符号。
@@ -226,7 +190,7 @@ User Pool 已关闭自助注册，由管理员创建用户。密码策略：≥1
 
 ---
 
-## 六、本地开发
+## 五、本地开发
 
 ```bash
 # 后端单测
@@ -237,7 +201,7 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 
 ---
 
-## 七、口径说明（数据准确性）
+## 六、口径说明（数据准确性）
 
 - **credit 单价**：由 `creditUnitPrice` 配置（Kiro 官方超额/加购价）。
 - **派生字段**：usage_rate / balance / 超额判定均基于每用户 `Usage_Limit`（PRO=1000 / PRO+=2000 / PRO_MAX=5000 / POWER=10000）。
@@ -248,7 +212,7 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 
 ---
 
-## 八、SES 发信前置（月度报告 / 调档回执）
+## 七、SES 发信前置（月度报告 / 调档回执）
 
 邮件经 Amazon SES 发送，需先在部署区域**验证发件邮箱**（`sesSender`）：
 ```bash
