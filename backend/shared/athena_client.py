@@ -181,6 +181,35 @@ class Queries:
         """
         return QuerySpec(sql=_norm(sql), note="月度报告：全量用户累计 credits/额度/使用率")
 
+    # -- 全量用户用量（不分页，供与注册名单合并 / CSV 导出）-----------
+    def all_users_usage(self, date_from=None, date_to=None, identity_filter=None) -> QuerySpec:
+        """区间内每用户聚合的完整用量行（与明细表字段一致，但不分页）。
+
+        用于后端把「注册名单（DynamoDB）」与「用量（Athena）」LEFT JOIN：
+        以 email 为键，返回所有有用量记录的用户；零用量用户由名单补全。
+        字段与 `users()` 明细表对齐（credits_used/usage_limit/balance/usage_rate/
+        is_overage/est_cost/total_messages/active_days/档位）。
+        """
+        w = self._where(date_from, date_to, identity_filter)
+        sql = f"""
+        SELECT email,
+               max_by(display_name, date) AS display_name,
+               max_by(department, date) AS department,
+               max_by(subscription_tier, date) AS subscription_tier,
+               round(sum(credits_used),1) AS credits_used,
+               round(max_by(usage_limit, date),1) AS usage_limit,
+               round(max_by(usage_limit, date) - sum(credits_used),1) AS balance,
+               round(sum(credits_used)/nullif(max_by(usage_limit, date),0),4) AS usage_rate,
+               (max_by(usage_limit, date) > 0 AND sum(credits_used) > max_by(usage_limit, date)) AS is_overage,
+               round(sum(est_cost),2) AS est_cost,
+               sum(total_messages) AS total_messages,
+               count(distinct date) AS active_days
+        FROM {self.t_daily}
+        {w}
+        GROUP BY email
+        """
+        return QuerySpec(sql=_norm(sql), note="全量用户用量（不分页，供合并注册名单/CSV 导出）")
+
     # -- 通用参数化查询（NL Agent 用：一个工具覆盖大多数用量问法）-----------
     def query_usage(self, metric: str = "credits", group_by: str = "none",
                     filters: Optional[dict] = None,

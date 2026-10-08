@@ -87,6 +87,37 @@ export const api = {
     r: DateRange,
     opts: { department?: string; search?: string; sort?: string; direction?: string; page?: number; page_size?: number }
   ) => get<UsersResponse>(`/api/users${qs({ ...rangeParams(r), ...opts })}`),
+  // CSV 导出：需带 Authorization 头，故用 fetch+blob 触发下载（而非 <a href>）。
+  // 范围与当前部门 tab + 搜索一致；含零用量用户，不分页。
+  usersExportCsv: async (
+    r: DateRange,
+    opts: { department?: string; search?: string; sort?: string; direction?: string }
+  ): Promise<void> => {
+    const { apiEndpoint } = getConfig();
+    const token = getIdToken();
+    const path = `/api/users/export${qs({ ...rangeParams(r), ...opts })}`;
+    const resp = await fetch(`${apiEndpoint}${path}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (resp.status === 401 || resp.status === 403) throw new ApiAuthError(resp.status);
+    if (!resp.ok) throw new Error(`导出失败: ${resp.status} ${await resp.text()}`);
+    // 从 Content-Disposition 解析文件名（优先 filename*=UTF-8''），回退到默认名。
+    const cd = resp.headers.get("Content-Disposition") || "";
+    let filename = `kiro-users-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.csv`;
+    const star = /filename\*=UTF-8''([^;]+)/i.exec(cd);
+    const plain = /filename="?([^";]+)"?/i.exec(cd);
+    if (star) filename = decodeURIComponent(star[1]);
+    else if (plain) filename = plain[1];
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
   filters: () => get<FiltersResponse>(`/api/filters`),
   report: (r: DateRange) => get<ReportResponse>(`/api/report${qs(rangeParams(r))}`),
 

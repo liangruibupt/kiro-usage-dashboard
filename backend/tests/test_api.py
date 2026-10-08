@@ -44,6 +44,17 @@ class MockLayer:
                 {"email": "mid@x.com", "display_name": "中用", "department": "阳光云",
                  "subscription_tier": "ProPlus", "credits_used": 1200.0, "usage_limit": 2000.0, "usage_rate": 0.60},
             ]
+        if "GROUP BY email" in s:  # all_users_usage（合并名单/CSV 导出用）
+            return [
+                {"email": "u1@x.com", "display_name": "梁伟", "department": "研发中心",
+                 "subscription_tier": "Power", "credits_used": 250.8, "usage_limit": 400.0,
+                 "balance": 149.2, "usage_rate": 0.627, "is_overage": False, "est_cost": 10.03,
+                 "total_messages": 916, "active_days": 5},
+                {"email": "u2@x.com", "display_name": "张三", "department": "研发中心",
+                 "subscription_tier": "Pro", "credits_used": 120.0, "usage_limit": 400.0,
+                 "balance": 280.0, "usage_rate": 0.30, "is_overage": False, "est_cost": 4.8,
+                 "total_messages": 300, "active_days": 3},
+            ]
         if "OFFSET" in s:  # users detail page
             return [
                 {"email": "u1@x.com", "display_name": "梁伟", "department": "研发中心",
@@ -126,13 +137,64 @@ def test_top_users_default_limit(client):
 
 
 def test_users_detail(client):
-    r = client.get("/api/users?page=1&page_size=20&sort=credits_used")
+    # include_all=false 走旧行为（Athena 分页，仅有用量用户）
+    r = client.get("/api/users?page=1&page_size=20&sort=credits_used&include_all=false")
     assert r.status_code == 200
     body = r.json()
     assert body["total"] == 40 and body["page"] == 1
     item = body["items"][0]
     assert item["email"] == "u1@x.com"
     assert item["status"] == "normal"  # usage_rate 0.627 -> normal
+
+
+def test_users_detail_include_all_default(client):
+    # 默认 include_all=true：以名单为基准合并用量（测试环境未配名单表
+    # → 降级为仅用量用户）。此路径在内存排序/分页。
+    r = client.get("/api/users?page=1&page_size=20&sort=credits_used")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 2  # all_users_usage 返回 2 行
+    emails = [it["email"] for it in body["items"]]
+    assert emails == ["u1@x.com", "u2@x.com"]  # 按 credits_used desc
+
+
+def test_users_export_csv(client):
+    r = client.get("/api/users/export")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+    assert "attachment" in r.headers["content-disposition"]
+    text = r.content.decode("utf-8-sig")  # 剥离 BOM
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    assert lines[0].startswith("邮箱,姓名,部门,档位")
+    assert len(lines) == 3  # 表头 + 2 条数据
+    assert "u1@x.com" in text and "u2@x.com" in text
+
+
+def test_users_export_filename_has_dept_and_range(client):
+    import urllib.parse
+
+    r = client.get("/api/users/export?department=研发中心&from=2026-09-01&to=2026-09-30")
+    assert r.status_code == 200
+    cd = r.headers["content-disposition"]
+    # 真实文件名（含中文部门）在 filename*=UTF-8'' 里，需解码后比对
+    import re
+    m = re.search(r"filename\*=UTF-8''([^;]+)", cd)
+    assert m, cd
+    decoded = urllib.parse.unquote(m.group(1))
+    assert decoded == "kiro-users-研发中心-20260901-20260930.csv", decoded
+
+
+def test_users_export_filename_no_range_falls_back(client):
+    import re
+    import urllib.parse
+
+    r = client.get("/api/users/export")  # 无部门、无区间
+    cd = r.headers["content-disposition"]
+    m = re.search(r"filename\*=UTF-8''([^;]+)", cd)
+    assert m, cd
+    decoded = urllib.parse.unquote(m.group(1))
+    # 部门回退为“全部”，区间回退为“截至YYYYMMDD”
+    assert decoded.startswith("kiro-users-全部-截至") and decoded.endswith(".csv"), decoded
 
 
 def test_filters(client):

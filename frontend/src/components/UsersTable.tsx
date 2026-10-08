@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Card, Input, Progress, Table, Tabs, Tag } from "antd";
+import { Button, Card, Input, Progress, Table, Tabs, Tag, Tooltip, message } from "antd";
+import { DownloadOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import type { SorterResult } from "antd/es/table/interface";
 import { api } from "../api/client";
@@ -42,6 +43,19 @@ export function UsersTable({ range, departments }: Props) {
   const [searchInput, setSearchInput] = useState(""); // 输入框当前值
   const [selected, setSelected] = useState<UserRow | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      // 导出范围 = 当前部门 tab + 搜索（不分页，含零用量用户）
+      await api.usersExportCsv(range, { department: dept, search, sort, direction });
+    } catch (e) {
+      message.error(`${t("users.downloadFail")}: ${(e as Error).message}`);
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -85,7 +99,12 @@ export function UsersTable({ range, departments }: Props) {
         title: t("users.col.tier"),
         dataIndex: "subscription_tier",
         width: 130,
-        render: (tier: string) => <Tag color={TIER_COLOR[tier] ?? "default"}>{tierLabel(tier, true)}</Tag>,
+        render: (tier: string) =>
+          tier ? (
+            <Tag color={TIER_COLOR[tier] ?? "default"}>{tierLabel(tier, true)}</Tag>
+          ) : (
+            <span style={{ color: "#94a3b8" }}>-</span>
+          ),
       },
       {
         title: t("users.col.credits"),
@@ -139,14 +158,26 @@ export function UsersTable({ range, departments }: Props) {
           onChange={(k) => setDept(k === "__all__" ? undefined : k)}
           style={{ flex: 1, minWidth: 0 }}
         />
-        <Input.Search
-          allowClear
-          placeholder={t("users.search")}
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          onSearch={(v) => setSearch(v.trim())}
-          style={{ width: 260, marginBottom: 8 }}
-        />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Input.Search
+            allowClear
+            placeholder={t("users.search")}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onSearch={(v) => setSearch(v.trim())}
+            style={{ width: 240, marginBottom: 8 }}
+          />
+          <Tooltip title={t("users.downloadHint")}>
+            <Button
+              icon={<DownloadOutlined />}
+              loading={downloading}
+              onClick={handleDownload}
+              style={{ marginBottom: 8 }}
+            >
+              {t("users.download")}
+            </Button>
+          </Tooltip>
+        </div>
       </div>
       <Table<UserRow>
         rowKey="email"

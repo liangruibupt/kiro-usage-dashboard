@@ -133,6 +133,9 @@ class ApiStack(Stack):
                 allow_methods=[apigw.CorsHttpMethod.GET, apigw.CorsHttpMethod.POST,
                                apigw.CorsHttpMethod.OPTIONS],
                 allow_origins=_as_list(cfg.get("corsOrigins")) or ["*"],
+                # 让浏览器能读到 CSV 导出的文件名；HTTP API 的 CORS 由网关生成，
+                # 必须在这里暴露，否则前端 fetch 读不到 Content-Disposition（回退默认名）。
+                expose_headers=["Content-Disposition"],
             ),
         )
 

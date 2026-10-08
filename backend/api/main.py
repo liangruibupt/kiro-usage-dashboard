@@ -60,6 +60,8 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
+    # 让浏览器能读到 CSV 导出的文件名（跨域下非安全列表头默认不暴露）。
+    expose_headers=["Content-Disposition"],
 )
 
 REQUIRED_GROUP = os.environ.get("REQUIRED_GROUP", "admins")
@@ -274,10 +276,26 @@ def users(
     direction: str = Query("desc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
+    include_all: bool = Query(True),
     q: Queries = Depends(get_queries),
     layer: QueryLayer = Depends(get_query_layer),
+    settings: Settings = Depends(get_settings),
     idf: Optional[dict] = Depends(get_identity_filter),
 ):
+    # include_all=True（默认）：以全量注册名单为基准，零用量补 0，内存排序+分页。
+    if include_all:
+        merged = _users_merged(settings, q, layer, date_from, date_to,
+                               department, search, idf)
+        total = len(merged)
+        ordered = _sort_users(merged, sort, direction)
+        start = (page - 1) * page_size
+        items = ordered[start:start + page_size]
+        return {
+            "total": total, "page": page, "page_size": page_size,
+            "sort": sort, "direction": direction, "items": items,
+        }
+
+    # include_all=False：旧行为，仅区间内有用量的用户，由 Athena 分页。
     total = int(layer.one(q.users_count(
         date_from, date_to, department=department, identity_filter=idf,
         search=search)).get("total") or 0)
@@ -303,6 +321,83 @@ def users(
         "total": total, "page": page, "page_size": page_size,
         "sort": sort, "direction": direction, "items": items,
     }
+
+
+@app.get("/api/users/export")
+def users_export(
+    department: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None, alias="from"),
+    date_to: Optional[str] = Query(None, alias="to"),
+    sort: str = Query("credits_used"),
+    direction: str = Query("desc"),
+    q: Queries = Depends(get_queries),
+    layer: QueryLayer = Depends(get_query_layer),
+    settings: Settings = Depends(get_settings),
+    idf: Optional[dict] = Depends(get_identity_filter),
+):
+    """导出当前部门 tab + 搜索范围下的全量用户为 CSV（含零用量，不分页）。"""
+    import csv
+    import io
+    import urllib.parse
+    from datetime import datetime
+
+    from fastapi.responses import Response
+
+    merged = _users_merged(settings, q, layer, date_from, date_to,
+                           department, search, idf)
+    ordered = _sort_users(merged, sort, direction)
+
+    status_cn = {"overage": "超额", "near_limit": "接近上限",
+                 "normal": "正常", "unused": "未使用"}
+    headers = ["邮箱", "姓名", "部门", "档位", "Credits", "额度", "余额",
+               "使用率", "是否超额", "预估成本(USD)", "总消耗", "活跃天数", "状态"]
+    buf = io.StringIO()
+    buf.write("\ufeff")  # UTF-8 BOM，确保 Excel 正确识别中文
+    w = csv.writer(buf)
+    w.writerow(headers)
+    for r in ordered:
+        w.writerow([
+            r.get("email") or "",
+            r.get("display_name") or "",
+            r.get("department") or "",
+            r.get("subscription_tier") or "-",
+            r.get("credits_used") or 0,
+            r.get("usage_limit") or 0,
+            r.get("balance") or 0,
+            r.get("usage_rate") or 0,
+            "是" if r.get("is_overage") else "否",
+            r.get("est_cost") or 0,
+            int(r.get("total_messages") or 0),
+            int(r.get("active_days") or 0),
+            status_cn.get(r.get("status") or "", r.get("status") or ""),
+        ])
+
+    dept_part = (department or "全部").replace("/", "_").replace("\\", "_")
+    # 时间段：有起止日期则用 {from}_{to}（去掉连字符），否则回退到导出日期。
+    def _compact(d: str) -> str:
+        return (d or "").replace("-", "")
+    if date_from and date_to:
+        range_part = f"{_compact(date_from)}-{_compact(date_to)}"
+    elif date_from:
+        range_part = f"{_compact(date_from)}-至今"
+    else:
+        range_part = f"截至{datetime.now().strftime('%Y%m%d')}"
+    fname = f"kiro-users-{dept_part}-{range_part}.csv"
+    quoted = urllib.parse.quote(fname)
+    # HTTP 头只能是 latin-1：filename= 用 ASCII 回退名（不含部门中文，但保留时间段），
+    # 真实（含中文部门）名走 filename*。
+    ascii_range = range_part if range_part.isascii() else datetime.now().strftime('%Y%m%d')
+    ascii_fallback = f"kiro-users-{ascii_range}.csv"
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quoted}"
+            ),
+        },
+    )
 
 
 @app.get("/api/filters")
@@ -419,6 +514,118 @@ def _status(usage_rate: float, is_overage: bool = False) -> str:
 
 
 _REGISTERED_CACHE: dict[str, tuple[float, int]] = {}
+_ROSTER_CACHE: dict[str, tuple[float, list[dict]]] = {}
+
+
+def _roster(settings: Settings) -> list[dict]:
+    """全量注册名单（user_department 表全扫），带 5 分钟内存缓存。
+
+    返回 [{email, display_name, department}]。表未配置/扫描失败返回空列表。
+    注：名单来自 identity-sync（订阅席位），含 email/部门/姓名，但**不含**档位/额度
+    （档位只在用量 CSV）。
+    """
+    import time as _time
+    table = settings.dept_table
+    if not table:
+        return []
+    hit = _ROSTER_CACHE.get(table)
+    now = _time.time()
+    if hit and (now - hit[0]) < 300:
+        return hit[1]
+    out: list[dict] = []
+    try:
+        import boto3
+        ddb = boto3.client("dynamodb", region_name=settings.region)
+        kw = {"TableName": table,
+              "ProjectionExpression": "user_key, display_name, department"}
+        while True:
+            resp = ddb.scan(**kw)
+            for it in resp.get("Items", []):
+                out.append({
+                    "email": (it.get("user_key", {}).get("S") or "").strip().lower(),
+                    "display_name": it.get("display_name", {}).get("S") or "",
+                    "department": it.get("department", {}).get("S") or "\u672a\u5206\u7ec4",
+                })
+            lek = resp.get("LastEvaluatedKey")
+            if not lek:
+                break
+            kw["ExclusiveStartKey"] = lek
+    except Exception:  # noqa: BLE001
+        return []
+    out = [u for u in out if u["email"]]
+    _ROSTER_CACHE[table] = (now, out)
+    return out
+
+
+def _users_merged(settings, q, layer, date_from, date_to, department, search, idf) -> list[dict]:
+    """以注册名单为基准，LEFT JOIN 区间用量，零用量补 0。
+
+    - 名单：_roster()（DynamoDB 全量）；
+    - 用量：Athena all_users_usage()（按 email 聚合）；
+    - 部门过滤以**名单部门**为准（tab 语义）；search 按姓名/邮箱模糊。
+    - 零用量用户：credits=0 等，档位/额度未知（数据源所限）。
+    返回前端行列表（未排序/未分页）。
+    """
+    roster = _roster(settings)
+    usage_rows = layer.run(q.all_users_usage(date_from, date_to, identity_filter=idf))
+    usage_by_email = {(r.get("email") or "").strip().lower(): r for r in usage_rows}
+
+    # 注册名单为空（未配 DEPT_TABLE）时，降级为仅用量用户（旧行为）。
+    if not roster:
+        base = [{"email": e, "display_name": u.get("display_name") or "",
+                 "department": u.get("department") or "\u672a\u5206\u7ec4"}
+                for e, u in usage_by_email.items()]
+    else:
+        base = roster
+
+    s = (search or "").strip().lower()
+    out: list[dict] = []
+    for person in base:
+        email = person["email"]
+        dept = person.get("department") or "\u672a\u5206\u7ec4"
+        name = person.get("display_name") or ""
+        # 部门 tab 过滤（以名单部门为准）
+        if department and dept != department:
+            continue
+        if s and (s not in email.lower()) and (s not in name.lower()):
+            continue
+        u = usage_by_email.get(email)
+        if u:
+            rate = float(u.get("usage_rate") or 0)
+            is_over = bool(u.get("is_overage"))
+            out.append({
+                "email": email,
+                "display_name": name or (u.get("display_name") or ""),
+                "department": dept,
+                "subscription_tier": u.get("subscription_tier") or "",
+                "credits_used": u.get("credits_used") or 0,
+                "usage_limit": u.get("usage_limit") or 0,
+                "balance": u.get("balance") or 0,
+                "usage_rate": rate,
+                "is_overage": is_over,
+                "est_cost": u.get("est_cost") or 0,
+                "total_messages": int(u.get("total_messages") or 0),
+                "active_days": int(u.get("active_days") or 0),
+                "status": _status(rate, is_over),
+            })
+        else:
+            # 零用量注册用户：用量全 0，档位/额度未知
+            out.append({
+                "email": email, "display_name": name, "department": dept,
+                "subscription_tier": "", "credits_used": 0, "usage_limit": 0,
+                "balance": 0, "usage_rate": 0, "is_overage": False, "est_cost": 0,
+                "total_messages": 0, "active_days": 0, "status": "unused",
+            })
+    return out
+
+
+def _sort_users(rows: list[dict], sort: str, direction: str) -> list[dict]:
+    """在内存按指定列排序（白名单列；非法列回退 credits_used desc）。"""
+    allowed = {"credits_used", "usage_limit", "balance", "usage_rate",
+               "total_messages", "active_days", "est_cost", "email"}
+    col = sort if sort in allowed else "credits_used"
+    rev = (direction or "desc").lower() != "asc"
+    return sorted(rows, key=lambda r: (r.get(col) if r.get(col) is not None else ("" if col == "email" else 0)), reverse=rev)
 
 
 def _registered_total(settings: Settings) -> int:
