@@ -57,6 +57,44 @@ AWS CLI profile `<PROFILE>`。
 - （真实模式）目标账户已有 Kiro / Q Developer 企业订阅，且每日用量 CSV 导出到某个 S3 桶；
   若接入 Identity Center 取部门/订阅名单，还需 SSO 实例信息。演示可跳过（见 mock 模式）。
 
+#### 部署所需的最小 IAM 权限
+
+部署用的 IAM 身份（**用户或角色均可，名字任意**）需要一组权限来跑 `cdk bootstrap` / `cdk deploy`
+及（可选）Agent 部署。仓库提供了一份现成的最小权限策略：`docs/least-privilege-deploy-policy.json`。
+
+> 这是一份**单份**客户托管策略（压缩后约 3.3KB，在 IAM 托管策略 6144 字节上限内）。它按服务收敛
+> 权限（不是 `*:*`）；对需要大量动作且资源名含随机后缀的服务（`cloudformation` / `s3` / `lambda`
+> / `cognito-idp` / `apigateway` / `cloudfront` / `ecr`）用服务级通配，其余服务给精确动作列表。
+> `iam:PassRole` 已用条件限定只能传给 lambda/events/cloudformation/bedrock-agentcore。
+
+**使用步骤：**
+
+1. **填占位符**：把策略里的 `<KIRO_SOURCE_BUCKET>` 替换为你的 Kiro 每日用量源桶名（真实模式）。
+   mock 模式（`mockMode=true`）不读外部源桶，可直接删除 `KiroSourceBucketReadCrossRegion` 整条语句。
+
+2. **创建托管策略**（替换 `<PROFILE>`）：
+   ```bash
+   aws iam create-policy --profile <PROFILE> \
+     --policy-name kiro-dashboard-deploy \
+     --policy-document file://docs/least-privilege-deploy-policy.json
+   ```
+
+3. **附加到你的部署身份**（用户或角色，取上一步输出的 Policy ARN）：
+   ```bash
+   # 附加给 IAM 用户
+   aws iam attach-user-policy --profile <PROFILE> \
+     --user-name <YOUR_DEPLOY_USER> --policy-arn <POLICY_ARN>
+   # 或附加给 IAM 角色
+   aws iam attach-role-policy --profile <PROFILE> \
+     --role-name <YOUR_DEPLOY_ROLE> --policy-arn <POLICY_ARN>
+   ```
+
+4. 之后用该身份的凭证执行下文的 bootstrap / deploy 即可。验证标准：全程无 `AccessDenied`，
+   各栈 `CREATE_COMPLETE`。
+
+> 不部署 NL 问答 Agent 时，可从策略中删除 `ecr:*` 与 `bedrock-agentcore:*` 两类动作以进一步收敛。
+> 若追求更严格的最小化，可在首次部署后把服务级通配替换为实际生成资源的 ARN（会牺牲重复清栈重建的灵活性）。
+
 ### 2. Python 环境
 ```bash
 cd kiro-dashboard-on-agentcore
