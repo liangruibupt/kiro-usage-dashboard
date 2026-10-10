@@ -119,8 +119,11 @@ def transform(
         lambda r: dv.balance(r["Credits_Used"], _limit(r)), axis=1)
     daily["is_overage"] = daily.apply(
         lambda r: dv.is_overage(r["Credits_Used"], _limit(r)), axis=1)
-    daily["est_cost"] = daily["Credits_Used"].map(
-        lambda c: dv.est_cost(c, credit_unit_price))
+    # est_cost 在日表里只放**当天的 overage 成本**（可按天累加）；
+    # 订阅月费是席位级整月固定，不能逐行加，由聚合查询按档位补。
+    # overage 成本 = Overage_Credits_Used * 单价（未开 overage 的客户恒=0）。
+    daily["est_cost"] = daily["Overage_Credits_Used"].map(
+        lambda oc: dv.overage_cost(oc, credit_unit_price))
 
     # 规范列名为 snake_case，便于 Athena/前端
     fact_user_daily = daily.rename(columns={

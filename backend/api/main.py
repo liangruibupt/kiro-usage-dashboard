@@ -71,6 +71,13 @@ REQUIRED_GROUP = os.environ.get("REQUIRED_GROUP", "admins")
 # /api/{proxy+} 的 JWT 授权路由（精确匿名路由仅匹配 POST，见任务 9.17），故 GET
 # 仍受网关 JWT 保护；close 是不同路径、未列入本集合，应用层组校验照常生效。
 _PUBLIC_PATHS = {"/api/health", "/docs", "/openapi.json", "/redoc", "/api/tier-requests"}
+
+# 成本说明（方案 A）：订阅月费（按档位整月计）+ 超额成本，非账单。
+_EST_COST_NOTE = (
+    "估算：订阅月费（按档位，Pro $20 / Pro+ $40 / Pro Max $100 / Power $200，整月计）"
+    " + 超额成本（超出额度部分 $0.04/credit）；月费未按在订天数折算，"
+    "量级与订阅账单一致，精确对账请以 AWS 账单 / Cost Explorer 为准。"
+)
 # 远程 MCP 端点 /mcp（及其尾斜杠/子路径）由共享 X-Api-Key 在工具层校验，不走 admins
 # 组校验，故按前缀放行。
 _PUBLIC_PREFIXES = ("/mcp",)
@@ -146,7 +153,7 @@ def summary(
             "ProMax": int(row.get("tier_promax") or 0),
             "Power": int(row.get("tier_power") or 0),
         },
-        "est_cost_note": f"估算：{settings.credit_unit_price} $/credit（Kiro 官方超额单价）",
+        "est_cost_note": _EST_COST_NOTE,
     }
 
 
@@ -189,7 +196,7 @@ def report(
         "kpis": kpis,
         "upgrades": upgrades,
         "downgrades": downgrades,
-        "est_cost_note": f"估算：{settings.credit_unit_price} $/credit（Kiro 官方超额单价）",
+        "est_cost_note": _EST_COST_NOTE,
     }
 
 

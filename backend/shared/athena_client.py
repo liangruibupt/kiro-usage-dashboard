@@ -15,6 +15,26 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
+try:
+    from backend.shared import derivations as _dv
+except ImportError:  # Lambda 打包：shared 为顶层包（API）或与本模块同级（ETL）
+    try:
+        from shared import derivations as _dv  # type: ignore
+    except ImportError:
+        import derivations as _dv  # type: ignore
+
+
+# 成本口径（方案 A）的 SQL 片段：每用户成本 = 月费（按档位）+ overage 成本。
+# 月费由档位映射（derivations.TIER_MONTHLY_USD 单一来源）；overage = sum(est_cost)
+# （est_cost 在日表已改为当天 overage 成本，可按天累加）。
+def _tier_monthly_sql(tier_expr: str) -> str:
+    """生成按档位映射月费的 CASE 表达式。tier_expr 是档位列/表达式（已在 SQL 中）。"""
+    whens = " ".join(
+        f"WHEN {_q(t)} THEN {p:g}"
+        for t, p in _dv.TIER_MONTHLY_USD.items()
+    )
+    return f"(CASE {tier_expr} {whens} ELSE 0 END)"
+
 
 # ---------------------------------------------------------------------------
 # 安全：标识符与字面量校验（防注入）
@@ -122,7 +142,7 @@ class Queries:
           (SELECT count(*) FROM per_user) AS total_users,
           (SELECT count_if(credits_used > 0) FROM per_user) AS active_users,
           (SELECT round(coalesce(sum(credits_used),0),1) FROM per_user) AS total_credits,
-          (SELECT round(coalesce(sum(est_cost),0),2) FROM per_user) AS est_cost,
+          (SELECT round(coalesce(sum(est_cost + {_tier_monthly_sql('subscription_tier')}),0),2) FROM per_user) AS est_cost,
           (SELECT count_if(usage_limit > 0 AND credits_used > usage_limit) FROM per_user) AS overage_users,
           (SELECT round(coalesce(sum(credits_used),0) / nullif(count_if(credits_used>0),0),1) FROM per_user) AS avg_credits_per_active,
           (SELECT count_if(subscription_tier='Pro') FROM per_user) AS tier_pro,
@@ -201,7 +221,7 @@ class Queries:
                round(max_by(usage_limit, date) - sum(credits_used),1) AS balance,
                round(sum(credits_used)/nullif(max_by(usage_limit, date),0),4) AS usage_rate,
                (max_by(usage_limit, date) > 0 AND sum(credits_used) > max_by(usage_limit, date)) AS is_overage,
-               round(sum(est_cost),2) AS est_cost,
+               round(sum(est_cost) + {_tier_monthly_sql('max_by(subscription_tier, date)')},2) AS est_cost,
                sum(total_messages) AS total_messages,
                count(distinct date) AS active_days
         FROM {self.t_daily}
@@ -276,7 +296,9 @@ class Queries:
             f"SELECT email, max_by(display_name, date) AS display_name, "
             f"max_by(department, date) AS department, "
             f"max_by(subscription_tier, date) AS subscription_tier, "
-            f"sum(credits_used) AS credits, sum(est_cost) AS est_cost, "
+            f"sum(credits_used) AS credits, "
+            # est_cost = 月费（按档位）+ overage（sum 日表 est_cost），口径同 summary。
+            f"sum(est_cost) + {_tier_monthly_sql('max_by(subscription_tier, date)')} AS est_cost, "
             f"count(distinct date) AS active_days "
             f"FROM {self.t_daily} {w} GROUP BY email {having}"
         )
@@ -384,7 +406,7 @@ class Queries:
                round(greatest(max_by(usage_limit, date) - sum(credits_used), 0),1) AS balance,
                round(sum(credits_used)/nullif(max_by(usage_limit, date),0),4) AS usage_rate,
                (max_by(usage_limit, date) > 0 AND sum(credits_used) > max_by(usage_limit, date)) AS is_overage,
-               round(sum(est_cost),2) AS est_cost,
+               round(sum(est_cost) + {_tier_monthly_sql('max_by(subscription_tier, date)')},2) AS est_cost,
                sum(total_messages) AS total_messages,
                count(distinct date) AS active_days
         FROM {self.t_daily}

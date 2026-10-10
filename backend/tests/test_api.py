@@ -106,7 +106,9 @@ def test_summary(client):
     assert body["kpis"]["activation_rate"] == round(36 / 40, 4)
     assert body["tiers"]["Power"] == 23
     assert body["range"]["from"] == "2026-09-01"
-    assert "$/credit" in body["est_cost_note"]
+    # 成本说明（方案 A）：月费 + 超额，非账单
+    assert "月费" in body["est_cost_note"]
+    assert "$0.04/credit" in body["est_cost_note"]
 
 
 def test_trend(client):

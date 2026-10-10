@@ -19,15 +19,28 @@ def test_balance_floor_zero():
     assert dv.balance(150, 100) == 0.0
 
 
-def test_est_cost():
-    assert dv.est_cost(100, 0.15) == 15.0
-    assert dv.est_cost(0, 0.15) == 0.0
+def test_overage_cost():
+    # overage 成本 = 超额 credits * 单价（未开 overage 时输入 0 -> 0）
+    assert dv.overage_cost(100, 0.04) == 4.0
+    assert dv.overage_cost(0) == 0.0
+    assert dv.overage_cost(0, 0.04) == 0.0
 
 
-def test_est_cost_default_price_is_kiro_official():
+def test_overage_cost_default_price_is_kiro_official():
     # 默认单价 = Kiro 官方超额单价 $0.04/credit
     assert dv.DEFAULT_CREDIT_UNIT_PRICE == 0.04
-    assert dv.est_cost(100) == 4.0
+    assert dv.overage_cost(100) == 4.0
+
+
+def test_tier_monthly_cost():
+    # 月费按档位（单一真实来源，与前端 TIER_PRICE_USD 对齐）
+    assert dv.tier_monthly_cost("Pro") == 20.0
+    assert dv.tier_monthly_cost("ProPlus") == 40.0
+    assert dv.tier_monthly_cost("ProMax") == 100.0
+    assert dv.tier_monthly_cost("Power") == 200.0
+    # 未知/空档位返回 0（不臆造）
+    assert dv.tier_monthly_cost("") == 0.0
+    assert dv.tier_monthly_cost("Unknown") == 0.0
 
 
 def test_is_overage():
