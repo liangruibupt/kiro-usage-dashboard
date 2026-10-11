@@ -6,10 +6,13 @@ export function Chart({
   option,
   height = 300,
   onEvents,
+  onChartReady,
 }: {
   option: EChartsOption;
   height?: number;
   onEvents?: Record<string, (params: any) => void>;
+  /** 拿到 ECharts 实例的回调（可选，向后兼容）。用于需要 zrender 级事件/坐标换算的图表。 */
+  onChartReady?: (chart: any) => void;
 }) {
   return (
     <ReactECharts
@@ -18,6 +21,7 @@ export function Chart({
       opts={{ renderer: "canvas" }}
       notMerge
       onEvents={onEvents}
+      onChartReady={onChartReady}
     />
   );
 }
