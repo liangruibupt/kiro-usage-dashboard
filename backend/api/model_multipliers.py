@@ -64,7 +64,7 @@ SEED: dict[str, dict] = {
     "claude_sonnet_4.5": {"multiplier": 1.3, "source": "official"},
     "claude_sonnet_4": {"multiplier": 1.3, "source": "official"},
     "claude_haiku_4.5": {"multiplier": 0.4, "source": "official"},
-    "deepseek_v3.2": {"multiplier": 0.25, "source": "official"},
+    "deepseek_3.2": {"multiplier": 0.25, "source": "official"},
     "minimax_m2.5": {"multiplier": 0.25, "source": "official"},
     "minimax_m2.1": {"multiplier": 0.15, "source": "official"},
     "glm_5": {"multiplier": 0.5, "source": "official"},
