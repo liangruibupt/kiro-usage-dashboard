@@ -237,6 +237,7 @@ const DICT: Record<string, { zh: string; en: string }> = {
     zh: "所选模型在当前时间段无使用数据",
     en: "Selected models have no usage in this range",
   },
+  // conc.table.title 已被 conc.table.overTitle / conc.table.bucketTitle 取代（保留无害）。
   "conc.table.title": { zh: "超阈人员明细", en: "Users above threshold" },
   "conc.table.empty": { zh: "当前阈值下无超阈人员", en: "No users above the current threshold" },
   "conc.col.name": { zh: "姓名", en: "Name" },
@@ -249,6 +250,22 @@ const DICT: Record<string, { zh: string; en: string }> = {
   "conc.exportHint": {
     zh: "导出当前阈值下的超阈人员",
     en: "Export users above the current threshold",
+  },
+  "conc.table.overTitle": {
+    zh: "超阈员工（占比 ≥ {pct}%）",
+    en: "Employees above threshold (ratio ≥ {pct}%)",
+  },
+  "conc.table.bucketTitle": {
+    zh: "占比 {from}–{to}% 的员工（共 {n} 人）",
+    en: "Employees with ratio {from}–{to}% ({n} total)",
+  },
+  "conc.table.clearBucket": {
+    zh: "返回超阈视图",
+    en: "Back to threshold view",
+  },
+  "conc.hist.clickHint": {
+    zh: "点击柱状图可按占比区间下钻人员明细",
+    en: "Click a bar to drill down the member list by share range",
   },
 
   // 用户明细表

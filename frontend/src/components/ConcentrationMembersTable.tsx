@@ -1,11 +1,11 @@
 import { useMemo } from "react";
-import { Button, Card, Table } from "antd";
+import { Button, Card, Space, Table } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 
-import type { ConcentrationMember, DateRange } from "../api/types";
+import type { ConcentrationBucket, ConcentrationMember, DateRange } from "../api/types";
 import { useI18n } from "../i18n";
-import { buildCsv, buildFilename, filterMembers } from "./concentrationExport";
+import { buildCsv, buildFilename, filterMembers, filterMembersByBucket } from "./concentrationExport";
 
 /**
  * 超阈人员明细表格 + CSV 导出。
@@ -20,19 +20,43 @@ export function ConcentrationMembersTable({
   models,
   range,
   loading,
+  selectedBucket = null,
+  bins,
+  buckets,
+  onClearBucket,
 }: {
   members: ConcentrationMember[];
   thresholdPct: number;
   models: string[];
   range: DateRange;
   loading?: boolean;
+  /** null=超阈视图；数字=桶下钻视图。 */
+  selectedBucket?: number | null;
+  /** = data.histogram.length，用于桶过滤口径与柱高一致。 */
+  bins?: number;
+  /** = data.histogram，用于标题/文件名显示桶区间 from/to。 */
+  buckets?: ConcentrationBucket[];
+  /** 清除下钻，返回超阈视图。 */
+  onClearBucket?: () => void;
 }) {
   const { t } = useI18n();
 
-  const rows = useMemo(
-    () => filterMembers(members, thresholdPct),
-    [members, thresholdPct]
-  );
+  const inBucketView = selectedBucket != null;
+
+  const rows = useMemo(() => {
+    if (inBucketView && bins) {
+      return filterMembersByBucket(members, selectedBucket!, bins);
+    }
+    return filterMembers(members, thresholdPct);
+  }, [members, thresholdPct, selectedBucket, bins, inBucketView]);
+
+  const title = inBucketView
+    ? t("conc.table.bucketTitle", {
+        from: Math.round((buckets?.[selectedBucket!]?.from ?? 0) * 100),
+        to: Math.round((buckets?.[selectedBucket!]?.to ?? 0) * 100),
+        n: rows.length,
+      })
+    : t("conc.table.overTitle", { pct: thresholdPct });
 
   const columns: ColumnsType<ConcentrationMember> = [
     { title: t("conc.col.name"), dataIndex: "display_name" },
@@ -74,7 +98,12 @@ export function ConcentrationMembersTable({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = buildFilename(models, thresholdPct, range);
+    a.download = buildFilename(
+      models,
+      thresholdPct,
+      range,
+      inBucketView ? (buckets?.[selectedBucket!] ?? null) : null
+    );
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -82,16 +111,23 @@ export function ConcentrationMembersTable({
   return (
     <Card
       size="small"
-      title={t("conc.table.title")}
+      title={title}
       extra={
-        <Button
-          icon={<DownloadOutlined />}
-          onClick={exportCsv}
-          disabled={rows.length === 0}
-          title={t("conc.exportHint")}
-        >
-          {t("conc.export")}
-        </Button>
+        <Space>
+          {inBucketView && (
+            <Button size="small" onClick={onClearBucket}>
+              {t("conc.table.clearBucket")}
+            </Button>
+          )}
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={exportCsv}
+            disabled={rows.length === 0}
+            title={t("conc.exportHint")}
+          >
+            {t("conc.export")}
+          </Button>
+        </Space>
       }
     >
       <Table<ConcentrationMember>

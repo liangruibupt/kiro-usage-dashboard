@@ -56,6 +56,52 @@ export function filterMembers(
   return members.filter((m) => m.ratio >= th);
 }
 
+/**
+ * 把个人占比 ratio ∈ [0,1] 映射到直方图桶索引，复刻后端
+ * idx = min(bins-1, int(ratio*bins))：ratio==1.0 落到最后一桶（[0.9,1.0] 闭区间），
+ * 其余桶为左闭右开 [from, to)。bins = 直方图桶数（data.histogram.length）。
+ * ratio 越界（<0 或 >1，正常不会发生）同样夹到首/末桶，保证与柱高一致。
+ *
+ * Math.floor 对非负 ratio ∈ [0,1] 等价于 Python int()（向零截断），
+ * 且后端桶算用的是未四舍五入的 member.ratio（直方图的 round 仅用于 from/to 显示，
+ * 不参与下钻），故前端与后端桶归属逐一致。
+ *
+ * 纯函数用例（仓库无前端测试框架，用例以规格形式钉在此处，供评审核对）：
+ *   bucketIndexOf(0.0, 10)  === 0
+ *   bucketIndexOf(0.05, 10) === 0
+ *   bucketIndexOf(0.1, 10)  === 1
+ *   bucketIndexOf(0.3, 10)  === 3
+ *   bucketIndexOf(0.95, 10) === 9
+ *   bucketIndexOf(1.0, 10)  === 9   // 末桶夹取（min(bins-1, …)），与后端一致
+ */
+export function bucketIndexOf(ratio: number, bins: number): number {
+  if (bins <= 0) return 0;
+  const idx = Math.floor(ratio * bins);
+  if (idx < 0) return 0;
+  return Math.min(bins - 1, idx);
+}
+
+/**
+ * 取某个桶的成员；bins 必须用 data.histogram.length 传入，口径与柱高一致。
+ * Array.filter 保序，故桶视图沿用后端 ratio 降序。
+ *
+ * 核心不变量：filterMembersByBucket(members, i, bins).length === data.histogram[i].count，
+ * 当且仅当 bins === data.histogram.length 原样传入时成立。
+ * 以后端 test_api.py::test_model_concentration_ok 的夹具锚定（ratios [0.9,0.6,0.2,0.0]，bins 10
+ * -> 分别落到桶 9/6/2/0，每桶 count 1）：
+ *   filterMembersByBucket(fixture, 9, 10).length === 1  (ratio 0.9)
+ *   filterMembersByBucket(fixture, 6, 10).length === 1  (ratio 0.6)
+ *   filterMembersByBucket(fixture, 2, 10).length === 1  (ratio 0.2)
+ *   filterMembersByBucket(fixture, 0, 10).length === 1  (ratio 0.0)
+ */
+export function filterMembersByBucket(
+  members: ConcentrationMember[],
+  bucketIndex: number,
+  bins: number
+): ConcentrationMember[] {
+  return members.filter((m) => bucketIndexOf(m.ratio, bins) === bucketIndex);
+}
+
 /** 清洗文件名里的非法字符（/ \ : * ? " < > | 及空白）。 */
 export function sanitizeFilename(s: string): string {
   return s.replace(/[/\\:*?"<>|\s]+/g, "_");
@@ -64,14 +110,19 @@ export function sanitizeFilename(s: string): string {
 /**
  * 组装 CSV 文件名：含模型 / 阈值 / 时间段，采用语言无关编码（无自然语言字面量）。
  * - 模型：全选为空时用 `allmodels`；多于 3 个用 `m1_m2_m3_plusN`（N=剩余数量）。
- * - 阈值：`th<整数百分比>`。
+ * - 视图：默认（超阈）为 `th<整数百分比>`；桶下钻视图为 `bucket<from%>-<to%>`。
  * - 时间段：`<from>_<to>`（去连字符）/ `to<to>`（仅结束）/ `<period>` / `allrange`。
  * 所有片段均为稳定 ASCII 编码，不随 UI 语言变化，故不需要走 DICT。
+ *
+ * 纯函数用例（供评审核对）：
+ *   buildFilename(models, 50, range) 含 `th50`（无 bucket 参数时与旧行为逐字节一致）
+ *   buildFilename(models, 50, range, {from:0.9, to:1.0}) 含 `bucket90-100`
  */
 export function buildFilename(
   models: string[],
   thresholdPct: number,
-  range: DateRange
+  range: DateRange,
+  bucket?: { from: number; to: number } | null
 ): string {
   let modelPart = "allmodels";
   if (models.length > 0) {
@@ -90,9 +141,11 @@ export function buildFilename(
     rangePart = range.period.replace(/-/g, "");
   }
 
-  const raw = `kiro-model-concentration-${modelPart}-th${Math.round(
-    thresholdPct
-  )}-${rangePart}.csv`;
+  const viewPart = bucket
+    ? `bucket${Math.round(bucket.from * 100)}-${Math.round(bucket.to * 100)}`
+    : `th${Math.round(thresholdPct)}`;
+
+  const raw = `kiro-model-concentration-${modelPart}-${viewPart}-${rangePart}.csv`;
   return sanitizeFilename(raw);
 }
 

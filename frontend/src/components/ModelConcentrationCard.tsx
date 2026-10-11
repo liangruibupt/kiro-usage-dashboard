@@ -26,11 +26,17 @@ export function ModelConcentrationCard({
   onData,
   onThresholdPct,
   onLoading,
+  selectedBucket = null,
+  onBucketClick,
 }: {
   range: DateRange;
   onData?: (res: ModelConcentrationResponse | null) => void;
   onThresholdPct?: (pct: number) => void;
   onLoading?: (loading: boolean) => void;
+  /** 高亮哪个桶，null=无（由页面注入）。 */
+  selectedBucket?: number | null;
+  /** 点击某桶回传原始索引（由页面做选中/取消判定）。 */
+  onBucketClick?: (index: number) => void;
 }) {
   const { t } = useI18n();
   const [selected, setSelected] = useState<string[]>([]);
@@ -222,7 +228,14 @@ export function ModelConcentrationCard({
                 />
               </Col>
             </Row>
-            <ConcentrationHistogram buckets={data.histogram} />
+            <ConcentrationHistogram
+              buckets={data.histogram}
+              selectedBucket={selectedBucket}
+              onBucketClick={onBucketClick}
+            />
+            {onBucketClick && (
+              <div style={{ color: "#94a3b8", marginTop: 8 }}>{t("conc.hist.clickHint")}</div>
+            )}
           </>
         ) : (
           <Empty description={t("conc.empty")} style={{ marginTop: 24 }} />

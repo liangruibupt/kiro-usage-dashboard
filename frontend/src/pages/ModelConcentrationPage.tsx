@@ -26,8 +26,20 @@ export function ModelConcentrationPage() {
   const [res, setRes] = useState<ModelConcentrationResponse | null>(null);
   const [thresholdPct, setThresholdPct] = useState(50);
   const [loading, setLoading] = useState(false);
+  const [selectedBucket, setSelectedBucket] = useState<number | null>(null); // null=未下钻
 
   const dateRange = useMemo(() => toDateRange(mode, period, range), [mode, period, range, tick]);
+
+  // 分布改变时清除陈旧选中：models/date-range 经 res 新对象标识生效（卡片每次请求先 onData(null)
+  // 再 onData(newRes)），threshold 经 thresholdPct 生效。再次点同柱取消的路径不触碰 res/thresholdPct，
+  // 故不会被此 effect 误复位。
+  useEffect(() => {
+    setSelectedBucket(null);
+  }, [res, thresholdPct]);
+
+  // 再次点击同一柱=取消；histogram 只回传原始索引，页面在此决定选中/取消语义。
+  const handleBucketClick = (index: number) =>
+    setSelectedBucket((cur) => (cur === index ? null : index));
 
   useEffect(() => {
     let active = true;
@@ -68,6 +80,8 @@ export function ModelConcentrationPage() {
           onData={setRes}
           onThresholdPct={setThresholdPct}
           onLoading={setLoading}
+          selectedBucket={selectedBucket}
+          onBucketClick={handleBucketClick}
         />
         <ConcentrationMembersTable
           members={res?.members ?? []}
@@ -75,6 +89,12 @@ export function ModelConcentrationPage() {
           models={res?.models ?? []}
           range={dateRange}
           loading={loading}
+          selectedBucket={selectedBucket}
+          // bins 必须是后端桶数 res.histogram.length 原样传入，表格不得重算；
+          // 这是 filterMembersByBucket(members,i,bins).length === histogram[i].count 成立的前提。
+          bins={res?.histogram.length ?? 0}
+          buckets={res?.histogram ?? []}
+          onClearBucket={() => setSelectedBucket(null)}
         />
       </Space>
     </AppShell>
