@@ -67,6 +67,8 @@ class ApiStack(Stack):
                 # 调档申请（Tier_Request · R57/R64/R70）
                 "TIER_REQUESTS_TABLE": data_stack.tier_table.table_name,
                 "SES_SENDER": ses_sender,
+                # 模型倍率维护（ModelMultipliers · FEAT-001）
+                "MODEL_MULTIPLIER_TABLE": data_stack.multiplier_table.table_name,
                 # 共享 API key：部署期从 Secrets Manager 解析其值并作为 env 注入；
                 # 运行时不再调用 Secrets Manager（简化冷启动，密钥轮换 = 重部署）。
                 "TIER_API_KEY": data_stack.tier_api_secret.secret_value.unsafe_unwrap(),
@@ -92,6 +94,8 @@ class ApiStack(Stack):
         data_stack.dept_table.grant_read_data(api_fn)
         # 调档申请（Tier_Request · R64）：读写限定到该表 ARN（含 GSI/流）。
         data_stack.tier_table.grant_read_write_data(api_fn)
+        # 模型倍率维护（ModelMultipliers · FEAT-001）：读写限定到该表 ARN。
+        data_stack.multiplier_table.grant_read_write_data(api_fn)
         # 调档通知邮件（R70）：SES 无细粒度资源级 ARN，故 resources=["*"]。
         api_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["ses:SendRawEmail", "ses:SendEmail"],
@@ -131,7 +135,7 @@ class ApiStack(Stack):
             cors_preflight=apigw.CorsPreflightOptions(
                 allow_headers=["Authorization", "Content-Type"],
                 allow_methods=[apigw.CorsHttpMethod.GET, apigw.CorsHttpMethod.POST,
-                               apigw.CorsHttpMethod.OPTIONS],
+                               apigw.CorsHttpMethod.PUT, apigw.CorsHttpMethod.OPTIONS],
                 allow_origins=_as_list(cfg.get("corsOrigins")) or ["*"],
                 # 让浏览器能读到 CSV 导出的文件名；HTTP API 的 CORS 由网关生成，
                 # 必须在这里暴露，否则前端 fetch 读不到 Content-Disposition（回退默认名）。
@@ -141,10 +145,11 @@ class ApiStack(Stack):
 
         integration = integrations.HttpLambdaIntegration("ApiIntegration", api_fn)
 
-        # 受保护路由：/api/* 需 JWT（GET + POST，POST 用于 /api/chat）
+        # 受保护路由：/api/* 需 JWT（GET + POST + PUT；POST 用于 /api/chat，
+        # PUT 用于 /api/model-multipliers 倍率编辑）
         http_api.add_routes(
             path="/api/{proxy+}",
-            methods=[apigw.HttpMethod.GET, apigw.HttpMethod.POST],
+            methods=[apigw.HttpMethod.GET, apigw.HttpMethod.POST, apigw.HttpMethod.PUT],
             integration=integration,
             authorizer=authorizer,
         )

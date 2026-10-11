@@ -54,6 +54,13 @@ except ImportError:  # Lambda 平铺打包
     from tier_requests import router as tier_requests_router  # type: ignore
 app.include_router(tier_requests_router)
 
+# 模型倍率维护路由（/api/model-multipliers）；组校验由下方中间件统一处理
+try:
+    from backend.api.model_multipliers import router as model_multipliers_router
+except ImportError:  # Lambda 平铺打包
+    from model_multipliers import router as model_multipliers_router  # type: ignore
+app.include_router(model_multipliers_router)
+
 # CORS：具体 origin 由 CloudFront 域注入；开发放宽
 app.add_middleware(
     CORSMiddleware,
@@ -233,6 +240,76 @@ def models(
     return {"models": [
         {"model": r["model"], "messages": int(r.get("messages") or 0)} for r in rows
     ]}
+
+
+@app.get("/api/model-concentration")
+def model_concentration(
+    models: str = Query(..., description="逗号分隔的模型名"),
+    threshold: float = Query(0.5, ge=0.0, le=1.0),
+    date_from: Optional[str] = Query(None, alias="from"),
+    date_to: Optional[str] = Query(None, alias="to"),
+    period: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}$"),
+    bins: int = Query(10, ge=2, le=50),
+    q: Queries = Depends(get_queries),
+    layer: QueryLayer = Depends(get_query_layer),
+    idf: Optional[dict] = Depends(get_identity_filter),
+    settings: Settings = Depends(get_settings),
+):
+    """模型集中度分析（模块 A，口径见只读调研报告）。
+
+    统计口径=消息数占比（非成本占比）；分母=区间内有消息的员工（已排除 0 用量用户）。
+    单条明细查询取每员工 ratio，在 Python 里算汇总 + 等宽直方图分桶，并回传 ratios
+    供前端在阈值滑块变化时本地重算（无需重新请求）。
+    """
+    date_from, date_to = _resolve_range(period, date_from, date_to)
+    # 1) 模型白名单校验（用 model_list 的 distinct model 结果）
+    valid = {r["model"] for r in layer.run(q.model_list())}
+    requested = [m.strip() for m in models.split(",") if m.strip()]
+    chosen = [m for m in requested if m in valid]
+    if not chosen:
+        return JSONResponse(status_code=400, content={
+            "detail": "no valid model selected", "valid_models": sorted(valid)})
+    # 2) 单条明细查询：每员工 ratio（+ target/total 消息数）
+    rows = layer.run(q.model_concentration_detail(
+        chosen, date_from, date_to, identity_filter=idf))
+    # 姓名/部门关联：复用 5 分钟缓存的注册名单（DEPT_TABLE 未配/扫描失败→空表→全部走回退）。
+    roster_by_email = {u["email"]: u for u in _roster(settings)}
+    members = []
+    for r in rows:
+        email = (r.get("email") or "").strip().lower()
+        person = roster_by_email.get(email) or {}
+        name = (person.get("display_name") or "").strip() or email.split("@")[0]
+        dept = (person.get("department") or "").strip() or "\u672a\u5206\u7ec4"
+        members.append({
+            "email": email,
+            "display_name": name,
+            "department": dept,
+            # 查询层键 target_msgs/total_msgs → 对外键 target_messages/total_messages（勿透传）
+            "target_messages": int(r.get("target_msgs") or 0),
+            "total_messages": int(r.get("total_msgs") or 0),
+            "ratio": float(r.get("ratio") or 0.0),
+        })
+    ratios = [m["ratio"] for m in members]
+    total = len(ratios)
+    concentrated = sum(1 for x in ratios if x >= threshold)
+    # 3) 等宽直方图分桶 [0,1]；x==1.0 落到最后一桶
+    hist = [0] * bins
+    for x in ratios:
+        idx = min(bins - 1, int(x * bins))
+        hist[idx] += 1
+    buckets = [{"from": round(i / bins, 4), "to": round((i + 1) / bins, 4),
+                "count": hist[i]} for i in range(bins)]
+    return {
+        "range": {"from": date_from, "to": date_to},
+        "models": chosen,
+        "threshold": threshold,
+        "total_users": total,
+        "concentrated_users": concentrated,
+        "concentration_rate": round(concentrated / total, 4) if total else 0.0,
+        "histogram": buckets,
+        "ratios": [round(x, 4) for x in ratios],
+        "members": members,
+    }
 
 
 @app.get("/api/departments")

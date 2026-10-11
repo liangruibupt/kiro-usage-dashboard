@@ -7,6 +7,9 @@ import type {
   DepartmentsResponse,
   FiltersResponse,
   McpConfigResponse,
+  ModelConcentrationResponse,
+  ModelMultiplier,
+  ModelMultipliersResponse,
   ModelsResponse,
   ReportResponse,
   SummaryResponse,
@@ -40,7 +43,7 @@ async function get<T>(path: string): Promise<T> {
   return (await resp.json()) as T;
 }
 
-async function mutate<T>(method: "POST" | "DELETE", path: string, body?: unknown): Promise<T> {
+async function mutate<T>(method: "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
   const { apiEndpoint } = getConfig();
   const token = getIdToken();
   const resp = await fetch(`${apiEndpoint}${path}`, {
@@ -81,6 +84,10 @@ export const api = {
     get<ModelsResponse>(`/api/models${qs({ ...rangeParams(r), email })}`),
   departments: (r: DateRange) =>
     get<DepartmentsResponse>(`/api/departments${qs(rangeParams(r))}`),
+  modelConcentration: (r: DateRange, models: string[], threshold: number) =>
+    get<ModelConcentrationResponse>(
+      `/api/model-concentration${qs({ ...rangeParams(r), models: models.join(","), threshold })}`
+    ),
   topUsers: (r: DateRange, limit?: number) =>
     get<TopUsersResponse>(`/api/top-users${qs({ ...rangeParams(r), limit })}`),
   users: (
@@ -140,6 +147,11 @@ export const api = {
       outcome,
       admin_note: note,
     }),
+
+  // 模型倍率维护
+  modelMultipliers: () => get<ModelMultipliersResponse>(`/api/model-multipliers`),
+  updateModelMultipliers: (items: Pick<ModelMultiplier, "model" | "multiplier">[]) =>
+    mutate<{ ok: boolean; updated: number }>("PUT", `/api/model-multipliers`, { items }),
   chat: async (prompt: string, sessionId?: string): Promise<{ reply: string; session_id: string }> => {
     const { apiEndpoint } = getConfig();
     const resp = await fetch(`${apiEndpoint}/api/chat`, {

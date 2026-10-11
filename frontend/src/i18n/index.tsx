@@ -54,8 +54,14 @@ const DICT: Record<string, { zh: string; en: string }> = {
   // 导航
   "nav.dashboard": { zh: "看板", en: "Dashboard" },
   "nav.report": { zh: "月度报告", en: "Monthly report" },
+  "nav.modelConcentration": { zh: "模型集中度", en: "Model Concentration" },
   "nav.admins": { zh: "管理员管理", en: "Admins" },
+  "nav.adminCenter": { zh: "管理中心", en: "Admin Center" },
   "nav.tierRequests": { zh: "调档申请", en: "Tier requests" },
+
+  // 管理中心（左侧菜单）
+  "adminCenter.users": { zh: "管理员管理", en: "Admins" },
+  "adminCenter.multipliers": { zh: "费率维护", en: "Multipliers" },
 
   // 月度报告页
   "report.title": { zh: "月度使用报告", en: "Monthly usage report" },
@@ -142,6 +148,31 @@ const DICT: Record<string, { zh: string; en: string }> = {
     en: "⚠ The API key is a shared secret—distribute via a trusted channel, keep it private. It only blocks random public abuse; requester email is self-declared, admin approval is the backstop.",
   },
 
+  // 模型倍率维护页
+  "mult.title": { zh: "模型倍率维护", en: "Model multipliers" },
+  "mult.intro": {
+    zh: "每次模型调用按倍率折算 Credits。官方倍率来自 Kiro 官网，推测/未知值请管理员按实际情况编辑后保存。",
+    en: "Each model call consumes credits scaled by its multiplier. Official values come from Kiro's site; review estimated/unknown values and save.",
+  },
+  "mult.col.model": { zh: "模型", en: "Model" },
+  "mult.col.multiplier": { zh: "倍率", en: "Multiplier" },
+  "mult.col.source": { zh: "来源", en: "Source" },
+  "mult.source.official": { zh: "官方", en: "Official" },
+  "mult.source.estimated": { zh: "推测", en: "Estimated" },
+  "mult.source.edited": { zh: "已编辑", en: "Edited" },
+  "mult.source.unknown": { zh: "未知", en: "Unknown" },
+  "mult.estimatedHint": {
+    zh: "无官方对应条目，当前为推测值，请核对后编辑保存。",
+    en: "No official entry; this is an estimated value—please review and save.",
+  },
+  "mult.unknownHint": {
+    zh: "数据中出现但无倍率，请为其设定倍率后保存。",
+    en: "Seen in data but has no multiplier—please set one and save.",
+  },
+  "mult.unset": { zh: "未设定", en: "Unset" },
+  "mult.save": { zh: "保存", en: "Save" },
+  "mult.saved": { zh: "已保存", en: "Saved" },
+
   // 过滤器
   "filter.byPeriod": { zh: "按周期", en: "By period" },
   "filter.byRange": { zh: "按日期范围", en: "By date range" },
@@ -183,6 +214,42 @@ const DICT: Record<string, { zh: string; en: string }> = {
   "chart.dept.total": { zh: "总 Credits", en: "Total credits" },
   "chart.dept.avg": { zh: "人均 Credits", en: "Per-capita credits" },
   "chart.top.title": { zh: "Top {n} 用户", en: "Top {n} users" },
+
+  // 模型集中度分析（模块 A）
+  "conc.title": { zh: "模型集中度分析", en: "Model concentration" },
+  "conc.caption": {
+    zh: "统计口径=消息数占比（非成本占比）：某员工对所选模型的消息数合计占其个人全部模型消息数的比例。",
+    en: "Metric = message-count share (not cost): the selected models' combined messages as a share of each user's total model messages.",
+  },
+  "conc.excludeZero": {
+    zh: "分母=区间内有消息的员工（已排除 0 用量用户）。",
+    en: "Denominator = users with messages in range (zero-usage users excluded).",
+  },
+  "conc.selectModels": { zh: "选择模型（可多选）", en: "Select models" },
+  "conc.threshold": { zh: "集中度阈值：{pct}%", en: "Concentration threshold: {pct}%" },
+  "conc.rate": { zh: "超阈员工占比", en: "Share above threshold" },
+  "conc.counts": { zh: "超阈 / 总员工数", en: "Above threshold / total" },
+  "conc.empty": { zh: "请选择一个或多个模型查看集中度分布", en: "Select one or more models to view the distribution" },
+  "conc.hist.xAxis": { zh: "个人占比区间", en: "Per-user share range" },
+  "conc.hist.yAxis": { zh: "员工数", en: "Users" },
+  "conc.hist.users": { zh: "员工数", en: "Users" },
+  "conc.noData": {
+    zh: "所选模型在当前时间段无使用数据",
+    en: "Selected models have no usage in this range",
+  },
+  "conc.table.title": { zh: "超阈人员明细", en: "Users above threshold" },
+  "conc.table.empty": { zh: "当前阈值下无超阈人员", en: "No users above the current threshold" },
+  "conc.col.name": { zh: "姓名", en: "Name" },
+  "conc.col.department": { zh: "部门", en: "Department" },
+  "conc.col.email": { zh: "邮箱", en: "Email" },
+  "conc.col.targetMsgs": { zh: "所选模型消息数", en: "Selected-model messages" },
+  "conc.col.totalMsgs": { zh: "总消息数", en: "Total messages" },
+  "conc.col.ratio": { zh: "占比(%)", en: "Share (%)" },
+  "conc.export": { zh: "导出 CSV", en: "Export CSV" },
+  "conc.exportHint": {
+    zh: "导出当前阈值下的超阈人员",
+    en: "Export users above the current threshold",
+  },
 
   // 用户明细表
   "users.title": { zh: "用户明细", en: "User details" },

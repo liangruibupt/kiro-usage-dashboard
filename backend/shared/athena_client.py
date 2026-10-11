@@ -182,6 +182,43 @@ class Queries:
         """
         return QuerySpec(sql=_norm(sql), note="模型消息数分布（含 auto）")
 
+    # -- 模型集中度明细（每员工目标模型消息占个人全模型消息比例）------------
+    def model_concentration_detail(self, models: list[str], date_from=None,
+                                   date_to=None, identity_filter=None) -> QuerySpec:
+        """每员工 ratio = 目标模型合计消息数 / 个人全模型消息数（口径见只读调研报告）。
+
+        两段式：per_user（按 email 聚合 total/target，HAVING total>0 排除 0 用量用户）
+        → ratios（算比例）。返回 email, ratio（保留 4 位），按 ratio 降序。
+        模型名经 _q 转义进 IN (...)；白名单校验由 API 层用 model_list() 结果做。
+        空 models 抛 ValueError。
+        """
+        sel = [str(m).strip() for m in (models or []) if str(m).strip()]
+        if not sel:
+            raise ValueError("models must be a non-empty list")
+        in_list = ", ".join(_q(m) for m in sel)
+        w = self._where(date_from, date_to, identity_filter)
+        sql = f"""
+        WITH per_user AS (
+          SELECT email,
+                 sum(model_messages) AS total_msgs,
+                 sum(CASE WHEN model IN ({in_list}) THEN model_messages ELSE 0 END) AS target_msgs
+          FROM {self.t_model}
+          {w}
+          GROUP BY email
+          HAVING sum(model_messages) > 0
+        ),
+        ratios AS (
+          SELECT email, total_msgs, target_msgs,
+                 CAST(target_msgs AS double) / total_msgs AS ratio
+          FROM per_user
+        )
+        SELECT email, total_msgs, target_msgs, round(ratio, 4) AS ratio
+        FROM ratios
+        ORDER BY ratio DESC
+        """
+        return QuerySpec(sql=_norm(sql),
+                         note="模型集中度明细：每员工 目标模型合计消息/个人全模型消息；分母=区间内有消息的员工")
+
     # -- 全量用户（月度报告用：不分页，含额度/档位/使用率）-------------------
     def report_users(self, date_from=None, date_to=None, identity_filter=None) -> QuerySpec:
         """区间内每用户累计 credits + 最近一天档位/额度 + 使用率（月度报告/调档建议）。"""

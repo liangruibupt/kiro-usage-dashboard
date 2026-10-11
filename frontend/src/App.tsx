@@ -3,8 +3,9 @@ import { isAuthenticated } from "./auth/auth";
 import { LoginPage } from "./pages/LoginPage";
 import { CallbackPage } from "./pages/CallbackPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { ModelConcentrationPage } from "./pages/ModelConcentrationPage";
 import { MonthlyReportPage } from "./pages/MonthlyReportPage";
-import { AdminManagementPage } from "./pages/AdminManagementPage";
+import { AdminCenterPage } from "./pages/AdminCenterPage";
 import { TierRequestsPage } from "./pages/TierRequestsPage";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
@@ -25,6 +26,14 @@ export function AppRoutes() {
         }
       />
       <Route
+        path="/model-concentration"
+        element={
+          <RequireAuth>
+            <ModelConcentrationPage />
+          </RequireAuth>
+        }
+      />
+      <Route
         path="/report"
         element={
           <RequireAuth>
@@ -33,13 +42,15 @@ export function AppRoutes() {
         }
       />
       <Route
-        path="/admins"
+        path="/admin/*"
         element={
           <RequireAuth>
-            <AdminManagementPage />
+            <AdminCenterPage />
           </RequireAuth>
         }
       />
+      {/* 旧路径重定向到管理中心的管理员管理 */}
+      <Route path="/admins" element={<Navigate to="/admin/users" replace />} />
       <Route
         path="/tier-requests"
         element={

@@ -152,6 +152,43 @@ export interface TierRequestsResponse {
   items: TierRequest[];
 }
 
+// 模型倍率维护（Model multipliers）
+export type ModelMultiplierSource = "official" | "estimated" | "edited" | "unknown";
+export interface ModelMultiplier {
+  model: string;
+  multiplier: number | null;
+  source: ModelMultiplierSource;
+}
+export interface ModelMultipliersResponse {
+  items: ModelMultiplier[];
+}
+
+// 模型集中度分析（Model concentration）
+export interface ConcentrationBucket {
+  from: number;
+  to: number;
+  count: number;
+}
+export interface ConcentrationMember {
+  email: string;
+  display_name: string;
+  department: string;
+  target_messages: number;
+  total_messages: number;
+  ratio: number;
+}
+export interface ModelConcentrationResponse {
+  range: { from: string | null; to: string | null };
+  models: string[];
+  threshold: number;
+  total_users: number;
+  concentrated_users: number;
+  concentration_rate: number;
+  histogram: ConcentrationBucket[];
+  ratios: number[];
+  members: ConcentrationMember[];
+}
+
 // 远程 MCP 配置（admins-only，用于调档申请页展示分发步骤）
 export interface McpConfigResponse {
   api_endpoint: string;

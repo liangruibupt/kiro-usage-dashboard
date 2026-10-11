@@ -5,7 +5,6 @@ import type { ColumnsType } from "antd/es/table";
 import { api, ApiAuthError } from "../api/client";
 import { login } from "../auth/auth";
 import type { AdminUser } from "../api/types";
-import { AppShell } from "../components/AppShell";
 import { useI18n } from "../i18n";
 
 const STATUS_MAP: Record<string, { key: string; color: string }> = {
@@ -14,7 +13,11 @@ const STATUS_MAP: Record<string, { key: string; color: string }> = {
   RESET_REQUIRED: { key: "admins.status.pending", color: "orange" },
 };
 
-export function AdminManagementPage() {
+/**
+ * 管理员管理面板：onboard/重置密码/重发邀请/移除 全部逻辑。
+ * 不自带 AppShell —— 由管理中心布局包裹（FEAT-002）。文案全走 i18n（admins.*）。
+ */
+export function AdminUsersPanel() {
   const { t } = useI18n();
   const { message } = AntdApp.useApp();
   const [rows, setRows] = useState<AdminUser[]>([]);
@@ -104,7 +107,7 @@ export function AdminManagementPage() {
   ];
 
   return (
-    <AppShell active="admins">
+    <>
       <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <Button icon={<ReloadOutlined />} onClick={load}>{t("common.refresh")}</Button>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setOnboardOpen(true)}>
@@ -140,6 +143,6 @@ export function AdminManagementPage() {
         />
         <div style={{ color: "#94a3b8", fontSize: 12 }}>{t("admins.onboard.hint")}</div>
       </Modal>
-    </AppShell>
+    </>
   );
 }

@@ -8,7 +8,7 @@ import { useI18n } from "../i18n";
 
 const { Header, Content } = Layout;
 
-type NavKey = "dashboard" | "report" | "admins" | "tierRequests";
+type NavKey = "dashboard" | "modelConcentration" | "report" | "admin" | "tierRequests";
 
 /** 三个页面共享的外壳：Header（标题 + 导航 + 语言 + 退出）+ Content。 */
 export function AppShell({ active, children }: { active: NavKey; children: ReactNode }) {
@@ -17,8 +17,9 @@ export function AppShell({ active, children }: { active: NavKey; children: React
 
   const navItems: { key: NavKey; label: string; path: string }[] = [
     { key: "dashboard", label: t("nav.dashboard"), path: "/" },
+    { key: "modelConcentration", label: t("nav.modelConcentration"), path: "/model-concentration" },
     { key: "report", label: t("nav.report"), path: "/report" },
-    { key: "admins", label: t("nav.admins"), path: "/admins" },
+    { key: "admin", label: t("nav.adminCenter"), path: "/admin/users" },
     { key: "tierRequests", label: t("nav.tierRequests"), path: "/tier-requests" },
   ];
 

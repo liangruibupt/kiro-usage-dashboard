@@ -74,7 +74,7 @@ def _assemble_app(app_dir: str) -> None:
         shutil.rmtree(app_dir)
     os.makedirs(app_dir, exist_ok=True)
     # 平铺 API 代码（去掉包前缀，handler.py 用 `from main import app` 回退）
-    for fn in ["handler.py", "main.py", "deps.py", "settings.py", "admin_users.py", "tier_requests.py", "mcp_server.py"]:
+    for fn in ["handler.py", "main.py", "deps.py", "settings.py", "admin_users.py", "tier_requests.py", "model_multipliers.py", "mcp_server.py"]:
         shutil.copy2(os.path.join(BACKEND, "api", fn), app_dir)
     # shared 作为子包保留（athena_client 里 `from shared.athena_client` 回退）
     shared_dst = os.path.join(app_dir, "shared")

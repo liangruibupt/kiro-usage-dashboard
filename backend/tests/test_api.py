@@ -25,6 +25,13 @@ class MockLayer:
                 {"model": "claude_haiku_4_5", "messages": 13036},
                 {"model": "auto", "messages": 12237},
             ]
+        if "ORDER BY ratio DESC" in s:  # model_concentration_detail
+            return [
+                {"email": "a@x.com", "ratio": 0.9, "target_msgs": 90, "total_msgs": 100},
+                {"email": "b@x.com", "ratio": 0.6, "target_msgs": 60, "total_msgs": 100},
+                {"email": "c@x.com", "ratio": 0.2, "target_msgs": 20, "total_msgs": 100},
+                {"email": "d@x.com", "ratio": 0.0, "target_msgs": 0, "total_msgs": 100},
+            ]
         if "GROUP BY department" in s:
             return [
                 {"department": "研发中心", "users": 10, "total_credits": 4403.4, "avg_credits": 440.3},
@@ -123,6 +130,79 @@ def test_models(client):
     assert r.status_code == 200
     m = r.json()["models"]
     assert m[0]["model"] == "claude_haiku_4_5" and m[0]["messages"] == 13036
+
+
+def test_model_concentration_ok(client):
+    # 合法模型（auto 在 distinct model 白名单内），阈值 0.5
+    r = client.get("/api/model-concentration?models=auto&threshold=0.5&bins=10")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["models"] == ["auto"]
+    assert body["total_users"] == 4            # 明细 4 行
+    assert body["concentrated_users"] == 2     # ratio>=0.5: 0.9, 0.6
+    assert body["concentration_rate"] == round(2 / 4, 4)
+    assert body["ratios"] == [0.9, 0.6, 0.2, 0.0]
+    assert len(body["histogram"]) == 10
+    # 0.9->桶9, 0.6->桶6, 0.2->桶2, 0.0->桶0
+    counts = {b["from"]: b["count"] for b in body["histogram"]}
+    assert counts[0.9] == 1 and counts[0.6] == 1 and counts[0.2] == 1 and counts[0.0] == 1
+
+
+def test_model_concentration_threshold_counts(client):
+    # 阈值 0.6（含等号）：0.9, 0.6 命中 -> 2
+    r = client.get("/api/model-concentration?models=auto&threshold=0.6")
+    assert r.status_code == 200
+    assert r.json()["concentrated_users"] == 2
+
+
+def test_model_concentration_invalid_model_400(client):
+    r = client.get("/api/model-concentration?models=not_a_model")
+    assert r.status_code == 400
+    body = r.json()
+    assert body["detail"] == "no valid model selected"
+    assert "auto" in body["valid_models"]
+
+
+def test_model_concentration_members_shape(client):
+    # members 返回全量有消息员工（非只超阈），按 ratio 降序，键齐全
+    r = client.get("/api/model-concentration?models=auto&threshold=0.5")
+    assert r.status_code == 200
+    members = r.json()["members"]
+    assert isinstance(members, list) and len(members) == 4   # 全量 4 行
+    keys = {"email", "display_name", "department",
+            "target_messages", "total_messages", "ratio"}
+    for m in members:
+        assert keys <= set(m.keys())
+    assert [m["ratio"] for m in members] == [0.9, 0.6, 0.2, 0.0]
+    # 键名映射：target_messages/total_messages 来自查询层 target_msgs/total_msgs
+    assert members[0]["target_messages"] == 90
+    assert members[0]["total_messages"] == 100
+
+
+def test_model_concentration_member_roster_fallback(client):
+    # 测试环境未配 DEPT_TABLE → _roster 返回 []，全部走回退：
+    # display_name=email 前缀，department="未分组"
+    r = client.get("/api/model-concentration?models=auto&threshold=0.5")
+    assert r.status_code == 200
+    members = r.json()["members"]
+    assert members[0]["display_name"] == "a"
+    assert members[0]["department"] == "未分组"
+
+
+def test_model_concentration_member_roster_hit(client, monkeypatch):
+    # monkeypatch _roster：命中的 email 取名单姓名/部门，其余回退
+    import backend.api.main as main
+    monkeypatch.setattr(main, "_roster", lambda settings: [
+        {"email": "a@x.com", "display_name": "张伟", "department": "研发中心"},
+    ])
+    r = client.get("/api/model-concentration?models=auto&threshold=0.5")
+    assert r.status_code == 200
+    members = r.json()["members"]
+    assert members[0]["display_name"] == "张伟"
+    assert members[0]["department"] == "研发中心"
+    # 未命中的仍回退
+    assert members[1]["display_name"] == "b"
+    assert members[1]["department"] == "未分组"
 
 
 def test_departments(client):

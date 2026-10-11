@@ -27,6 +27,8 @@ class Settings:
     tier_requests_table: str = os.environ.get("TIER_REQUESTS_TABLE", "")
     tier_api_key: str = os.environ.get("TIER_API_KEY", "")        # 由 Secrets Manager/SSM 注入其值
     ses_sender: str = os.environ.get("SES_SENDER", "")            # 复用 report 的发件人口径
+    # 模型倍率（credit multiplier）维护：DynamoDB 表名（由 ApiStack 注入）。
+    model_multiplier_table: str = os.environ.get("MODEL_MULTIPLIER_TABLE", "")
     # region 复用现有 Settings.region
 
 

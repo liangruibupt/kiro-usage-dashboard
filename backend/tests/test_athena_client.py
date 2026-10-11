@@ -64,6 +64,37 @@ def test_users_department_filter_escaped(q):
     assert "department = 'R&D''s team'" in s
 
 
+def test_model_concentration_detail_shape(q):
+    s = q.model_concentration_detail(
+        ["auto", "claude_opus_5"], date_from="2026-09-01", date_to="2026-09-07").sql
+    assert "kiro_usage.fact_user_model_daily" in s
+    assert "GROUP BY email" in s
+    assert "HAVING sum(model_messages) > 0" in s
+    assert "IN ('auto', 'claude_opus_5')" in s
+    assert "ORDER BY ratio DESC" in s
+    assert "date >= '2026-09-01'" in s
+    # 新增列：total_msgs/target_msgs 透传到 ratios CTE 与最终 SELECT
+    assert "total_msgs" in s and "target_msgs" in s
+    assert "round(ratio, 4) AS ratio" in s
+
+
+def test_model_concentration_detail_escapes_quotes(q):
+    s = q.model_concentration_detail(["a'b"]).sql
+    assert "IN ('a''b')" in s
+
+
+def test_model_concentration_detail_empty_models_raises(q):
+    with pytest.raises(ValueError):
+        q.model_concentration_detail([])
+    with pytest.raises(ValueError):
+        q.model_concentration_detail(["   "])
+
+
+def test_model_concentration_detail_invalid_date_raises(q):
+    with pytest.raises(ValueError):
+        q.model_concentration_detail(["auto"], date_from="2026/09/01")
+
+
 def test_department_and_filter_lists(q):
     assert "distinct department" in q.department_list().sql
     assert "distinct model" in q.model_list().sql

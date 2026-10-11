@@ -90,6 +90,14 @@ class DataStack(Stack):
             removal_policy=RemovalPolicy.DESTROY)
         self.tier_table = tier_table
 
+        # 模型倍率维护（ModelMultipliers · FEAT-001）：分区键 model（Athena 真实
+        # model 字符串）。倍率种子/编辑由 API 读写。
+        multiplier_table = ddb.Table(self, "ModelMultipliers",
+            partition_key=ddb.Attribute(name="model", type=ddb.AttributeType.STRING),
+            billing_mode=ddb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=RemovalPolicy.DESTROY)
+        self.multiplier_table = multiplier_table
+
         # --- Glue DB + 外部表（partition projection）---
         gdb = glue.CfnDatabase(self, "GlueDb",
                                catalog_id=self.account,
@@ -311,6 +319,7 @@ class DataStack(Stack):
         CfnOutput(self, "DeptTableName", value=dept_table.table_name)
         CfnOutput(self, "TierApiKeySecretArn", value=tier_api_secret.secret_arn)
         CfnOutput(self, "TierRequestsTableName", value=tier_table.table_name)
+        CfnOutput(self, "ModelMultiplierTableName", value=multiplier_table.table_name)
         CfnOutput(self, "AthenaWorkgroup", value=wg.name)
         CfnOutput(self, "EtlFnName", value=etl_fn.function_name)
         CfnOutput(self, "IdentitySyncFnName", value=idsync_fn.function_name)
