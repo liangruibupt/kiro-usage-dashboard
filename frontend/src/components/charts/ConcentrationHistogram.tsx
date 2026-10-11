@@ -9,14 +9,13 @@ const NORMAL_COLOR = "#38bdf8";
 const SELECTED_COLOR = "#f59e0b";
 /** 选中列整列高亮背景（覆盖 0 人列——0 人柱体高度为 0，靠 markArea 给出视觉反馈）。 */
 const SELECTED_AREA = "rgba(245, 158, 11, 0.18)";
-/** 常态列背景阴影（showBackground），让每一列（含 0 人列）都有可见、可点的区域。 */
-const COLUMN_BG = "rgba(148, 163, 184, 0.10)";
 
 /**
  * 模型集中度直方图：x=个人占比区间（如 0–10%），y=员工数。
  * - selectedBucket：高亮哪个桶（null=无选中）。
- * - onBucketClick：点击某**列**（含柱子上方灰色背景阴影、含 0 人列）回传其桶索引，
- *   由父级决定选中/取消语义。命中按点击的 x 像素反查类目列，与点击高度无关。
+ * - onBucketClick：点击某**列**（整列任意位置，含柱子上方空白、含 0 人列）回传其桶索引，
+ *   由父级决定选中/取消语义。命中按点击的 x 像素反查类目列，与点击高度无关
+ *   （靠坐标换算，不需要可见的列背景）。
  *
  * 命中实现（避免"必须精确点中细柱"）：
  *   不依赖 series click（只在柱体/背景上触发且 0 人列不可靠），改用 zrender 级 click：
@@ -87,9 +86,6 @@ export function ConcentrationHistogram({
                 }
               : { color: NORMAL_COLOR, borderRadius: [4, 4, 0, 0] },
         })),
-        // 每列显示淡色背景阴影，使 0 人列也有可见、可点的整列区域。
-        showBackground: true,
-        backgroundStyle: { color: COLUMN_BG },
         // 选中列整列高亮（从底到顶），覆盖柱高为 0 的列；silent 不拦截点击。
         markArea:
           selectedBucket != null && labels[selectedBucket]
