@@ -405,7 +405,10 @@ def users(
         "est_cost": r.get("est_cost") or 0,
         "total_messages": int(r.get("total_messages") or 0),
         "active_days": int(r.get("active_days") or 0),
-        "status": _status(r.get("usage_rate") or 0, bool(r.get("is_overage"))),
+        "status": _status(
+            r.get("usage_rate") or 0, bool(r.get("is_overage")),
+            has_usage=(float(r.get("credits_used") or 0) > 0
+                       or int(r.get("total_messages") or 0) > 0)),
     } for r in rows]
     return {
         "total": total, "page": page, "page_size": page_size,
@@ -592,13 +595,19 @@ def _resolve_range(period: Optional[str], date_from: Optional[str],
     return date_from, date_to
 
 
-def _status(usage_rate: float, is_overage: bool = False) -> str:
-    """返回与语言无关的状态 key，由前端本地化为中/英文。"""
+def _status(usage_rate: float, is_overage: bool = False, has_usage: bool = False) -> str:
+    """返回与语言无关的状态 key，由前端本地化为中/英文。
+
+    `has_usage`：是否真实用过（credits_used>0 或 total_messages>0）。用于区分
+    「极少量用量」与「完全未使用」：usage_rate 经 round(,4) 后，极小用量（如 Pro 档
+    消耗 0.04 credit → rate≈0.00004）会被归零，若仅看 usage_rate 会误判为「未使用」。
+    只要真实用过（哪怕 1 条消息），就应归「正常」而非「未使用」。
+    """
     if is_overage or usage_rate >= 1.0:
         return "overage"
     if usage_rate >= 0.8:
         return "near_limit"
-    if usage_rate > 0:
+    if usage_rate > 0 or has_usage:
         return "normal"
     return "unused"
 
@@ -708,7 +717,10 @@ def _users_merged(settings, q, layer, date_from, date_to, department, search, id
                 "est_cost": u.get("est_cost") or 0,
                 "total_messages": int(u.get("total_messages") or 0),
                 "active_days": int(u.get("active_days") or 0),
-                "status": _status(rate, is_over),
+                "status": _status(
+                    rate, is_over,
+                    has_usage=(float(u.get("credits_used") or 0) > 0
+                               or int(u.get("total_messages") or 0) > 0)),
             })
         else:
             # 零用量注册用户：用量全 0，档位/额度未知

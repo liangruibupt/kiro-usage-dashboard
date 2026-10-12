@@ -262,6 +262,22 @@ def test_users_include_out_of_roster_usage_users(client, monkeypatch):
     assert u2["usage_limit"] == 400.0            # 额度用 Athena 真实值
 
 
+def test_status_tiny_usage_is_normal_not_unused():
+    """极少量用量（usage_rate 被 round 归零，但真实用过）应标 normal，而非 unused。
+
+    例：Pro 档消耗 0.04 credit → usage_rate≈0.00004 → round(,4)=0。只看 usage_rate 会
+    误判「未使用」；has_usage=True（credits>0 或 messages>0）时应为「正常」。
+    """
+    import backend.api.main as main
+    # 真实用过但 usage_rate 被归零 → 正常
+    assert main._status(0.0, is_overage=False, has_usage=True) == "normal"
+    # 完全未使用 → 未使用
+    assert main._status(0.0, is_overage=False, has_usage=False) == "unused"
+    # 超额 / 接近上限 不受影响
+    assert main._status(1.05, has_usage=True) == "overage"
+    assert main._status(0.85, has_usage=True) == "near_limit"
+
+
 def test_users_export_csv(client):
     r = client.get("/api/users/export")
     assert r.status_code == 200
