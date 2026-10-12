@@ -240,6 +240,28 @@ def test_users_detail_include_all_default(client):
     assert emails == ["u1@x.com", "u2@x.com"]  # 按 credits_used desc
 
 
+def test_users_include_out_of_roster_usage_users(client, monkeypatch):
+    """D3 口径：注册名单外、但有用量的用户也应纳入明细（部门=未分组）。
+
+    名单(_roster)只有 u1；Athena 用量(all_users_usage)有 u1+u2。u2 不在名单里，
+    但真实有用量，必须出现在明细表，且 department 归「未分组」、档位/额度用 Athena 值。
+    """
+    import backend.api.main as main
+    monkeypatch.setattr(main, "_roster", lambda settings: [
+        {"email": "u1@x.com", "display_name": "梁伟", "department": "研发中心"},
+    ])
+    r = client.get("/api/users?page=1&page_size=20&sort=credits_used")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 2  # u1(名单内) + u2(名单外有用量) 并集
+    by_email = {it["email"]: it for it in body["items"]}
+    assert "u2@x.com" in by_email  # 名单外用量用户被纳入
+    u2 = by_email["u2@x.com"]
+    assert u2["department"] == "未分组"          # 名单外统一归未分组
+    assert u2["subscription_tier"] == "Pro"      # 档位用 Athena 真实值
+    assert u2["usage_limit"] == 400.0            # 额度用 Athena 真实值
+
+
 def test_users_export_csv(client):
     r = client.get("/api/users/export")
     assert r.status_code == 200
@@ -311,6 +333,19 @@ def test_report(client):
     downs = {d["email"]: d["suggested_tier"] for d in body["downgrades"]}
     assert ups == {"hi@x.com": "ProPlus"}
     assert downs == {"lo@x.com": "Pro"}
+    # 使用率阈值模型：全量 users[] 带升/降一档建议（suggested_up/suggested_down）
+    users = body["users"]
+    assert len(users) == 3
+    by_email = {u["email"]: u for u in users}
+    assert by_email["hi@x.com"]["suggested_up"] == "ProPlus"
+    assert by_email["hi@x.com"]["suggested_down"] is None   # Pro 不可再降
+    assert by_email["lo@x.com"]["suggested_up"] == "Power"
+    assert by_email["lo@x.com"]["suggested_down"] == "ProPlus"
+    assert by_email["mid@x.com"]["suggested_up"] == "ProMax"
+    assert by_email["mid@x.com"]["suggested_down"] == "Pro"
+    # 每行含 usage_rate（前端本地阈值过滤用）
+    for u in users:
+        assert "usage_rate" in u
 
 
 # --- 组级授权中间件（R2/R4）------------------------------------------------

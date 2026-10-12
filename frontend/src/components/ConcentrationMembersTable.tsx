@@ -5,18 +5,17 @@ import type { ColumnsType } from "antd/es/table";
 
 import type { ConcentrationBucket, ConcentrationMember, DateRange } from "../api/types";
 import { useI18n } from "../i18n";
-import { buildCsv, buildFilename, filterMembers, filterMembersByBucket } from "./concentrationExport";
+import { buildCsv, buildFilename, filterMembersByBucket } from "./concentrationExport";
 
 /**
- * 超阈人员明细表格 + CSV 导出。
- * - 行集 = members 按当前阈值本地过滤（ratio>=thresholdPct/100），已降序。
- * - 阈值滑块变化时 thresholdPct 变化触发 useMemo 重算，实时更新，无需请求。
- * - 导出 CSV：前端纯本地生成（Blob + a[download]），带 UTF-8 BOM；文件名含模型/阈值/时间段。
+ * 人员明细表格 + CSV 导出（仅点柱驱动）。
+ * - 未选桶（selectedBucket==null）：行集为空，显示中性标题 + 提示「点击上方柱状图查看某区间人员」。
+ * - 选中某桶：行集 = members 按该桶本地过滤（filterMembersByBucket），已降序。
+ * - 导出 CSV：前端纯本地生成（Blob + a[download]），带 UTF-8 BOM；文件名含模型/桶/时间段。
  * - 纯逻辑（过滤 / CSV / 文件名）抽到 concentrationExport.ts，便于单测与复用。
  */
 export function ConcentrationMembersTable({
   members,
-  thresholdPct,
   models,
   range,
   loading,
@@ -26,7 +25,6 @@ export function ConcentrationMembersTable({
   onClearBucket,
 }: {
   members: ConcentrationMember[];
-  thresholdPct: number;
   models: string[];
   range: DateRange;
   loading?: boolean;
@@ -43,12 +41,10 @@ export function ConcentrationMembersTable({
 
   const inBucketView = selectedBucket != null;
 
-  const rows = useMemo(() => {
-    if (inBucketView && bins) {
-      return filterMembersByBucket(members, selectedBucket!, bins);
-    }
-    return filterMembers(members, thresholdPct);
-  }, [members, thresholdPct, selectedBucket, bins, inBucketView]);
+  const rows = useMemo(
+    () => (inBucketView && bins ? filterMembersByBucket(members, selectedBucket!, bins) : []),
+    [members, selectedBucket, bins, inBucketView]
+  );
 
   const title = inBucketView
     ? t("conc.table.bucketTitle", {
@@ -56,7 +52,7 @@ export function ConcentrationMembersTable({
         to: Math.round((buckets?.[selectedBucket!]?.to ?? 0) * 100),
         n: rows.length,
       })
-    : t("conc.table.overTitle", { pct: thresholdPct });
+    : t("conc.table.title.hint");
 
   const columns: ColumnsType<ConcentrationMember> = [
     { title: t("conc.col.name"), dataIndex: "display_name" },
@@ -100,7 +96,7 @@ export function ConcentrationMembersTable({
     a.href = url;
     a.download = buildFilename(
       models,
-      thresholdPct,
+      0, // thresholdPct 占位：非桶视图导不出（rows 恒空），桶视图走 bucket 分支不读该值
       range,
       inBucketView ? (buckets?.[selectedBucket!] ?? null) : null
     );
@@ -137,7 +133,7 @@ export function ConcentrationMembersTable({
         columns={columns}
         dataSource={rows}
         pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: [10, 20, 50] }}
-        locale={{ emptyText: t("conc.table.empty") }}
+        locale={{ emptyText: inBucketView ? t("conc.table.empty") : t("conc.table.empty.hint") }}
         scroll={{ x: 700 }}
       />
     </Card>

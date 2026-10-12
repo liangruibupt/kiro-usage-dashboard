@@ -24,18 +24,16 @@ export function ModelConcentrationPage() {
   const [tick, setTick] = useState(0);
 
   const [res, setRes] = useState<ModelConcentrationResponse | null>(null);
-  const [thresholdPct, setThresholdPct] = useState(50);
   const [loading, setLoading] = useState(false);
   const [selectedBucket, setSelectedBucket] = useState<number | null>(null); // null=未下钻
 
   const dateRange = useMemo(() => toDateRange(mode, period, range), [mode, period, range, tick]);
 
   // 分布改变时清除陈旧选中：models/date-range 经 res 新对象标识生效（卡片每次请求先 onData(null)
-  // 再 onData(newRes)），threshold 经 thresholdPct 生效。再次点同柱取消的路径不触碰 res/thresholdPct，
-  // 故不会被此 effect 误复位。
+  // 再 onData(newRes)）。再次点同柱取消的路径不触碰 res，故不会被此 effect 误复位。
   useEffect(() => {
     setSelectedBucket(null);
-  }, [res, thresholdPct]);
+  }, [res]);
 
   // 再次点击同一柱=取消；histogram 只回传原始索引，页面在此决定选中/取消语义。
   const handleBucketClick = (index: number) =>
@@ -78,14 +76,12 @@ export function ModelConcentrationPage() {
         <ModelConcentrationCard
           range={dateRange}
           onData={setRes}
-          onThresholdPct={setThresholdPct}
           onLoading={setLoading}
           selectedBucket={selectedBucket}
           onBucketClick={handleBucketClick}
         />
         <ConcentrationMembersTable
           members={res?.members ?? []}
-          thresholdPct={thresholdPct}
           models={res?.models ?? []}
           range={dateRange}
           loading={loading}

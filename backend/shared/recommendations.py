@@ -70,6 +70,23 @@ def required_tier(credits_used: float) -> str:
     return TIER_LADDER[-1]  # 超过 Power 额度：无更高档可升，取 Power
 
 
+def annotate_tier_steps(rows: list[dict]) -> list[dict]:
+    """给每行附加「升一档/降一档」建议键（使用率阈值模型用）：
+       suggested_up   = next_tier(subscription_tier)  # 已在最高档 Power -> None
+       suggested_down = prev_tier(subscription_tier)  # 已在最低档 Pro  -> None
+    当前档未知（不在 TIER_LADDER）时两者都为 None。原行其余字段原样透传。
+    """
+    out = []
+    for r in rows:
+        tier = r.get("subscription_tier") or ""
+        out.append({
+            **r,
+            "suggested_up": next_tier(tier),
+            "suggested_down": prev_tier(tier),
+        })
+    return out
+
+
 def recommendations(rows: list[dict]) -> tuple[list[dict], list[dict]]:
     """从每用户行（含 subscription_tier / credits_used）计算
     (建议升档列表, 建议降档列表)。每项在原行基础上加 suggested_tier。

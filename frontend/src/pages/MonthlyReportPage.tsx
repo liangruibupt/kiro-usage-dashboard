@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Card, Col, Row, Spin, Statistic, Table, Tag } from "antd";
+import { Alert, Button, Card, Col, Row, Slider, Spin, Statistic, Table, Tag } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import type { Dayjs } from "dayjs";
 import { api, ApiAuthError } from "../api/client";
 import { login } from "../auth/auth";
-import type { FiltersResponse, ReportRecoRow, ReportResponse } from "../api/types";
+import type { FiltersResponse, ReportResponse, ReportUserRow } from "../api/types";
 import { FilterBar, defaultRange, toDateRange, type FilterMode } from "../components/FilterBar";
 import { AppShell } from "../components/AppShell";
+import { csvCell } from "../components/concentrationExport";
 import { useI18n, tierLabel } from "../i18n";
 
 export function MonthlyReportPage() {
@@ -23,6 +24,10 @@ export function MonthlyReportPage() {
   const [data, setData] = useState<ReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // 使用率阈值滑块（本地过滤，拖动零请求）：升档 80 / 降档 40 / 关停 0。
+  const [upgradePct, setUpgradePct] = useState(80);
+  const [downgradePct, setDowngradePct] = useState(40);
+  const [shutdownPct, setShutdownPct] = useState(0);
 
   const dateRange = useMemo(() => toDateRange(mode, period, range), [mode, period, range]);
 
@@ -63,7 +68,29 @@ export function MonthlyReportPage() {
     };
   }, [dateRange, tick]);
 
-  const cols: ColumnsType<ReportRecoRow> = [
+  // 使用率（百分比）；usage_limit=0 时后端 usage_rate=null，归一为 0 参与比较。
+  const rate = (r: ReportUserRow) => (r.usage_rate ?? 0) * 100;
+
+  // 本地阈值过滤（复刻模型集中度页本地过滤，滑块拖动零请求）：
+  const upgradeRows = useMemo(
+    () => (data?.users ?? []).filter((r) => rate(r) >= upgradePct && r.suggested_up != null),
+    [data, upgradePct]
+  );
+  const downgradeRows = useMemo(
+    () =>
+      (data?.users ?? []).filter(
+        (r) => rate(r) < downgradePct && (r.credits_used || 0) > 0 && r.suggested_down != null
+      ),
+    [data, downgradePct]
+  );
+  const shutdownRows = useMemo(
+    // usage_limit>0 门：排除额度缺失（usage_rate=null）的异常行，不误列为建议关停。
+    () => (data?.users ?? []).filter((r) => rate(r) <= shutdownPct && (r.usage_limit || 0) > 0),
+    [data, shutdownPct]
+  );
+
+  // 五个共用列：姓名/邮箱、部门、当前档位、用量/额度、使用率。
+  const baseCols: ColumnsType<ReportUserRow> = [
     {
       title: t("report.col.name"),
       key: "name",
@@ -91,37 +118,57 @@ export function MonthlyReportPage() {
       title: t("report.col.rate"),
       dataIndex: "usage_rate",
       width: 90,
-      render: (v: number) => `${(v * 100).toFixed(1)}%`,
+      render: (v: number | null) => `${((v ?? 0) * 100).toFixed(1)}%`,
     },
+  ];
+
+  // 建议档位列工厂（升/降表共用，key 决定读哪个字段）；?? "" 收窄 string|null。
+  const tierCol = (key: "suggested_up" | "suggested_down"): ColumnsType<ReportUserRow>[number] => ({
+    title: t("report.col.suggested"),
+    key,
+    width: 110,
+    render: (_v, r) => <Tag color="blue">{tierLabel(r[key] ?? "", true)}</Tag>,
+  });
+
+  const upgradeCols = [...baseCols, tierCol("suggested_up")];
+  const downgradeCols = [...baseCols, tierCol("suggested_down")];
+  const shutdownCols: ColumnsType<ReportUserRow> = [
+    ...baseCols,
     {
-      title: t("report.col.suggested"),
-      dataIndex: "suggested_tier",
-      width: 110,
-      render: (v: string) => <Tag color="blue">{tierLabel(v, true)}</Tag>,
+      title: t("report.col.suggest"),
+      key: "suggest",
+      width: 140,
+      render: () => <Tag color="red">{t("report.col.suggestShutdown")}</Tag>,
     },
   ];
 
   const downloadCsv = () => {
     if (!data) return;
-    const header = ["type", "name", "email", "department", "current_tier", "credits_used", "usage_limit", "usage_rate", "suggested_tier"];
-    const lines = [header.join(",")];
-    const push = (kind: string, rows: ReportRecoRow[]) => {
+    const header = [
+      "type", "name", "email", "department", "current_tier",
+      "credits_used", "usage_limit", "usage_rate", "suggested",
+    ];
+    const lines = [header.map(csvCell).join(",")];
+    const push = (kind: string, rows: ReportUserRow[], suggestedOf: (r: ReportUserRow) => string) => {
       rows.forEach((r) => {
-        lines.push([
-          kind,
-          `"${(r.display_name || "").replace(/"/g, '""')}"`,
-          r.email,
-          `"${(r.department || "").replace(/"/g, '""')}"`,
-          `"${tierLabel(r.subscription_tier)}"`,
-          r.credits_used,
-          r.usage_limit,
-          (r.usage_rate * 100).toFixed(1) + "%",
-          `"${tierLabel(r.suggested_tier)}"`,
-        ].join(","));
+        lines.push(
+          [
+            csvCell(kind),
+            csvCell(r.display_name || ""),
+            csvCell(r.email),
+            csvCell(r.department || ""),
+            csvCell(tierLabel(r.subscription_tier)),
+            csvCell(r.credits_used),
+            csvCell(r.usage_limit),
+            csvCell(((r.usage_rate ?? 0) * 100).toFixed(1) + "%"),
+            csvCell(suggestedOf(r)),
+          ].join(",")
+        );
       });
     };
-    push("upgrade", data.upgrades);
-    push("downgrade", data.downgrades);
+    push("upgrade", upgradeRows, (r) => tierLabel(r.suggested_up ?? ""));
+    push("downgrade", downgradeRows, (r) => tierLabel(r.suggested_down ?? ""));
+    push("shutdown", shutdownRows, () => t("report.col.suggestShutdown"));
     const blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -167,14 +214,26 @@ export function MonthlyReportPage() {
               <Col xs={24} md={12}><Card size="small"><Statistic title={t("tier.title")} value={`${tierLabel("Pro", true)} ${k.tiers.Pro} · ${tierLabel("ProPlus", true)} ${k.tiers.ProPlus} · ${tierLabel("ProMax", true)} ${k.tiers.ProMax} · ${tierLabel("Power", true)} ${k.tiers.Power}`} valueStyle={{ fontSize: 14 }} /></Card></Col>
             </Row>
 
-            <Card size="small" title={`${t("report.upgrades")}（${t("report.count", { n: data!.upgrades.length })}）`} style={{ marginBottom: 16 }}>
-              <Table<ReportRecoRow> rowKey="email" size="small" columns={cols} dataSource={data!.upgrades}
+            <Card size="small" title={`${t("report.upgrades")}（${t("report.count", { n: upgradeRows.length })}）`} style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 8, color: "#94a3b8" }}>{t("report.threshold.upgrade", { pct: upgradePct })}</div>
+              <Slider min={0} max={100} value={upgradePct} onChange={setUpgradePct} tooltip={{ formatter: (v) => `${v}%` }} />
+              <Table<ReportUserRow> rowKey="email" size="small" columns={upgradeCols} dataSource={upgradeRows}
                 pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50] }}
                 locale={{ emptyText: t("report.none") }} scroll={{ x: 700 }} />
             </Card>
 
-            <Card size="small" title={`${t("report.downgrades")}（${t("report.count", { n: data!.downgrades.length })}）`}>
-              <Table<ReportRecoRow> rowKey="email" size="small" columns={cols} dataSource={data!.downgrades}
+            <Card size="small" title={`${t("report.downgrades")}（${t("report.count", { n: downgradeRows.length })}）`} style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 8, color: "#94a3b8" }}>{t("report.threshold.downgrade", { pct: downgradePct })}</div>
+              <Slider min={0} max={100} value={downgradePct} onChange={setDowngradePct} tooltip={{ formatter: (v) => `${v}%` }} />
+              <Table<ReportUserRow> rowKey="email" size="small" columns={downgradeCols} dataSource={downgradeRows}
+                pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50] }}
+                locale={{ emptyText: t("report.none") }} scroll={{ x: 700 }} />
+            </Card>
+
+            <Card size="small" title={`${t("report.shutdown")}（${t("report.count", { n: shutdownRows.length })}）`}>
+              <div style={{ marginBottom: 8, color: "#94a3b8" }}>{t("report.threshold.shutdown", { pct: shutdownPct })}</div>
+              <Slider min={0} max={100} value={shutdownPct} onChange={setShutdownPct} tooltip={{ formatter: (v) => `${v}%` }} />
+              <Table<ReportUserRow> rowKey="email" size="small" columns={shutdownCols} dataSource={shutdownRows}
                 pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50] }}
                 locale={{ emptyText: t("report.none") }} scroll={{ x: 700 }} />
             </Card>

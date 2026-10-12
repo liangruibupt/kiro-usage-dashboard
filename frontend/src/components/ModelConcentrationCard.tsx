@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Alert, Card, Col, Empty, Row, Select, Slider, Spin, Statistic } from "antd";
+import { useEffect, useState } from "react";
+import { Alert, Card, Col, Empty, Row, Select, Spin } from "antd";
 
 import { api, ApiAuthError } from "../api/client";
 import { login } from "../auth/auth";
@@ -7,8 +7,6 @@ import type { DateRange, ModelConcentrationResponse } from "../api/types";
 import { ConcentrationHistogram } from "./charts/ConcentrationHistogram";
 import { useI18n } from "../i18n";
 
-/** 阈值滑块默认值（百分比）。 */
-const DEFAULT_THRESHOLD_PCT = 50;
 /** 默认预选倍率阈值：multiplier>=2.0 的模型。 */
 const PRESELECT_MULTIPLIER = 2.0;
 
@@ -24,14 +22,12 @@ const PRESELECT_MULTIPLIER = 2.0;
 export function ModelConcentrationCard({
   range,
   onData,
-  onThresholdPct,
   onLoading,
   selectedBucket = null,
   onBucketClick,
 }: {
   range: DateRange;
   onData?: (res: ModelConcentrationResponse | null) => void;
-  onThresholdPct?: (pct: number) => void;
   onLoading?: (loading: boolean) => void;
   /** 高亮哪个桶，null=无（由页面注入）。 */
   selectedBucket?: number | null;
@@ -42,7 +38,6 @@ export function ModelConcentrationCard({
   const [selected, setSelected] = useState<string[]>([]);
   const [modelOptions, setModelOptions] = useState<{ label: string; value: string }[]>([]);
   const [preselectDone, setPreselectDone] = useState(false);
-  const [thresholdPct, setThresholdPct] = useState<number>(DEFAULT_THRESHOLD_PCT);
   const [data, setData] = useState<ModelConcentrationResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +97,9 @@ export function ModelConcentrationCard({
     setData(null);
     onData?.(null);
     api
-      .modelConcentration(range, selected, DEFAULT_THRESHOLD_PCT / 100)
+      // 前端已弃用返回的集中度统计（concentration_rate/concentrated_users/threshold），
+      // 第三入参仅为满足后端必填 threshold 传固定值 0.5，后端签名/返回不变。
+      .modelConcentration(range, selected, 0.5)
       .then((res) => {
         if (!active) return;
         setData(res);
@@ -142,21 +139,6 @@ export function ModelConcentrationCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range, selected, preselectDone]);
 
-  const threshold = thresholdPct / 100;
-
-  const handleThresholdChange = (pct: number) => {
-    setThresholdPct(pct);
-    onThresholdPct?.(pct);
-  };
-
-  // slider 变化时用返回的 ratios 本地重算（ratio>=threshold 含等号），不重新请求。
-  const stats = useMemo(() => {
-    if (!data) return { total: 0, concentrated: 0, rate: 0 };
-    const total = data.ratios.length;
-    const concentrated = data.ratios.filter((x) => x >= threshold).length;
-    return { total, concentrated, rate: total ? concentrated / total : 0 };
-  }, [data, threshold]);
-
   return (
     <Card size="small" title={t("conc.title")}>
       <Alert
@@ -167,7 +149,7 @@ export function ModelConcentrationCard({
         description={t("conc.excludeZero")}
       />
       <Row gutter={[16, 16]} align="middle">
-        <Col xs={24} md={12}>
+        <Col xs={24}>
           <div style={{ marginBottom: 4, color: "#94a3b8" }}>{t("conc.selectModels")}</div>
           <Select
             mode="multiple"
@@ -177,18 +159,6 @@ export function ModelConcentrationCard({
             value={selected}
             onChange={setSelected}
             options={modelOptions}
-          />
-        </Col>
-        <Col xs={24} md={12}>
-          <div style={{ marginBottom: 4, color: "#94a3b8" }}>
-            {t("conc.threshold", { pct: thresholdPct })}
-          </div>
-          <Slider
-            min={0}
-            max={100}
-            value={thresholdPct}
-            onChange={handleThresholdChange}
-            tooltip={{ formatter: (v) => `${v}%` }}
           />
         </Col>
       </Row>
@@ -212,22 +182,6 @@ export function ModelConcentrationCard({
           <Empty description={t("conc.empty")} style={{ marginTop: 24 }} />
         ) : data ? (
           <>
-            <Row gutter={[16, 16]} style={{ marginTop: 8, marginBottom: 8 }}>
-              <Col xs={12} md={8}>
-                <Statistic
-                  title={t("conc.rate")}
-                  value={(stats.rate * 100).toFixed(1)}
-                  suffix="%"
-                />
-              </Col>
-              <Col xs={12} md={8}>
-                <Statistic
-                  title={t("conc.counts")}
-                  value={stats.concentrated}
-                  suffix={`/ ${stats.total}`}
-                />
-              </Col>
-            </Row>
             <ConcentrationHistogram
               buckets={data.histogram}
               selectedBucket={selectedBucket}

@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 try:
     from backend.shared.athena_client import Queries, QueryLayer
     from backend.shared.recommendations import recommendations as _recommendations
+    from backend.shared.recommendations import annotate_tier_steps as _annotate_tier_steps
     from backend.api.settings import Settings, get_settings
     from backend.api.deps import (
         get_queries, get_query_layer, get_identity_filter,
@@ -22,6 +23,7 @@ try:
 except ImportError:  # Lambda 平铺打包
     from shared.athena_client import Queries, QueryLayer  # type: ignore
     from shared.recommendations import recommendations as _recommendations  # type: ignore
+    from shared.recommendations import annotate_tier_steps as _annotate_tier_steps  # type: ignore
     from settings import Settings, get_settings  # type: ignore
     from deps import get_queries, get_query_layer, get_identity_filter  # type: ignore
 
@@ -138,7 +140,8 @@ def summary(
     active = int(row.get("active_users") or 0)    # 区间内 credits_used>0
     daily_active_avg = row.get("daily_active_avg") or 0
     daily_active_peak = int(row.get("daily_active_peak") or 0)
-    registered = _registered_total(settings) or total
+    # D3 口径：注册数 = 名单 ∪ 有用量用户（含名单外的真实用量用户）。
+    registered = _registered_total(settings, _usage_emails(q, layer, date_from, date_to, idf)) or total
     return {
         "range": {"from": date_from, "to": date_to},
         "kpis": {
@@ -179,7 +182,8 @@ def report(
     srow = layer.one(q.summary(date_from, date_to, identity_filter=idf))
     total = int(srow.get("total_users") or 0)
     active = int(srow.get("active_users") or 0)
-    registered = _registered_total(settings) or total
+    # D3 口径：注册数 = 名单 ∪ 有用量用户。
+    registered = _registered_total(settings, _usage_emails(q, layer, date_from, date_to, idf)) or total
     kpis = {
         "registered_users": registered,
         "active_users": active,
@@ -197,12 +201,14 @@ def report(
         },
     }
     users = layer.run(q.report_users(date_from, date_to, identity_filter=idf))
-    upgrades, downgrades = _recommendations(users)
+    upgrades, downgrades = _recommendations(users)       # 保留（兼容 + 不破 test_report）
+    users_annotated = _annotate_tier_steps(users)        # 使用率阈值模型：全量名单 + 升/降一档建议
     return {
         "range": {"from": date_from, "to": date_to},
         "kpis": kpis,
         "upgrades": upgrades,
         "downgrades": downgrades,
+        "users": users_annotated,
         "est_cost_note": _EST_COST_NOTE,
     }
 
@@ -660,7 +666,19 @@ def _users_merged(settings, q, layer, date_from, date_to, department, search, id
                  "department": u.get("department") or "\u672a\u5206\u7ec4"}
                 for e, u in usage_by_email.items()]
     else:
-        base = roster
+        # 注册名单 ∪ 有用量用户（D3 口径）：有些用户在 Kiro 用量数据(Athena)里有记录、
+        # 却不在 Identity Center 订阅应用分配名单里（未分配/直接在 Kiro 开席位/IdC 无此用户）。
+        # 这些人真实消耗了 credits，应纳入明细/CSV，否则档位计数与 summary(Athena 口径)对不上。
+        # 名单外用量用户部门归“未分组”（identity-sync 无其部门），档位/额度用 Athena 真实值。
+        base = list(roster)
+        roster_emails = {p["email"] for p in roster}
+        for e, u in usage_by_email.items():
+            if e not in roster_emails:
+                base.append({
+                    "email": e,
+                    "display_name": u.get("display_name") or e.split("@")[0],
+                    "department": "\u672a\u5206\u7ec4",
+                })
 
     s = (search or "").strip().lower()
     out: list[dict] = []
@@ -712,34 +730,54 @@ def _sort_users(rows: list[dict], sort: str, direction: str) -> list[dict]:
     return sorted(rows, key=lambda r: (r.get(col) if r.get(col) is not None else ("" if col == "email" else 0)), reverse=rev)
 
 
-def _registered_total(settings: Settings) -> int:
-    """注册用户总数 = 部门表（identity-sync 写入）条目数。
+def _usage_emails(q, layer, date_from, date_to, idf) -> set:
+    """本次区间 Athena 有用量记录的 email 集合（小写）。供注册数并集口径（D3）用。
 
-    作为激活率分母（对齐参照看板：注册总数）。带 5 分钟内存缓存，
+    复用 all_users_usage（QueryLayer 带 TTL 缓存，与 _users_merged 命中同一结果）。
+    """
+    try:
+        rows = layer.run(q.all_users_usage(date_from, date_to, identity_filter=idf))
+        return {(r.get("email") or "").strip().lower() for r in rows if r.get("email")}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def _registered_total(settings: Settings, usage_emails: Optional[set] = None) -> int:
+    """注册用户总数 = 注册名单(DynamoDB) ∪ 有用量用户(Athena) 的去重计数（D3 口径）。
+
+    作为激活率分母。D3 之前只数部门表条目；现在并上「Athena 有用量但不在名单」的用户
+    （与 _users_merged 的并集口径一致，使注册数 / 档位分布 / 明细表 / CSV 全站统一）。
+    `usage_emails`：本次区间 Athena 有用量的 email 集合（小写）；None 时退化为仅名单计数。
+    名单扫描结果带 5 分钟缓存（缓存的是名单 email 集合，并集每次按传入 usage_emails 现算）。
     未配置 DEPT_TABLE 或扫描失败时返回 0（调用方回退到区间总用户数）。
     """
     import time as _time
 
     table = settings.dept_table
     if not table:
-        return 0
+        return 0  # 未配置名单表：回退（调用方用 `or total`）
     hit = _REGISTERED_CACHE.get(table)
     now = _time.time()
+    roster_emails: Optional[set] = None
     if hit and (now - hit[0]) < 300:
-        return hit[1]
-    try:
-        import boto3
-        ddb = boto3.client("dynamodb", region_name=settings.region)
-        count = 0
-        kw = {"TableName": table, "Select": "COUNT"}
-        while True:
-            resp = ddb.scan(**kw)
-            count += int(resp.get("Count") or 0)
-            lek = resp.get("LastEvaluatedKey")
-            if not lek:
-                break
-            kw["ExclusiveStartKey"] = lek
-    except Exception:  # noqa: BLE001
-        return 0
-    _REGISTERED_CACHE[table] = (now, count)
-    return count
+        roster_emails = hit[1]
+    if roster_emails is None:
+        try:
+            import boto3
+            ddb = boto3.client("dynamodb", region_name=settings.region)
+            roster_emails = set()
+            kw = {"TableName": table, "ProjectionExpression": "user_key"}
+            while True:
+                resp = ddb.scan(**kw)
+                for it in resp.get("Items", []):
+                    e = (it.get("user_key", {}).get("S") or "").strip().lower()
+                    if e:
+                        roster_emails.add(e)
+                lek = resp.get("LastEvaluatedKey")
+                if not lek:
+                    break
+                kw["ExclusiveStartKey"] = lek
+        except Exception:  # noqa: BLE001
+            return 0  # 名单扫描失败：回退（调用方用 `or total`）
+        _REGISTERED_CACHE[table] = (now, roster_emails)
+    return len(roster_emails | (usage_emails or set()))

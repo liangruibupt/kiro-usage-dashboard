@@ -5,7 +5,7 @@
 """
 from backend.shared.recommendations import (
     recommendations, next_tier, prev_tier, required_tier,
-    TIER_LIMITS, TIER_PRICE_USD, tier_label,
+    annotate_tier_steps, TIER_LIMITS, TIER_PRICE_USD, tier_label,
 )
 
 
@@ -83,6 +83,27 @@ def test_keep_and_zero_usage_not_recommended():
     ]
     up, down = recommendations(rows)
     assert up == [] and down == []
+
+
+def test_annotate_tier_steps():
+    """使用率阈值模型：给每行附加升一档/降一档建议键（档位阶梯 next/prev）。"""
+    rows = [
+        {"subscription_tier": "Pro", "credits_used": 1500},
+        {"subscription_tier": "Power", "credits_used": 500},
+        {"subscription_tier": "ProPlus", "credits_used": 1200},
+        {"subscription_tier": "Unknown", "credits_used": 300},
+    ]
+    out = annotate_tier_steps(rows)
+    # Pro：可升 Pro+，不可再降
+    assert out[0]["suggested_up"] == "ProPlus" and out[0]["suggested_down"] is None
+    # Power：不可再升，可降 Pro Max
+    assert out[1]["suggested_up"] is None and out[1]["suggested_down"] == "ProMax"
+    # ProPlus：升 Pro Max / 降 Pro
+    assert out[2]["suggested_up"] == "ProMax" and out[2]["suggested_down"] == "Pro"
+    # 未知档：两者皆 None
+    assert out[3]["suggested_up"] is None and out[3]["suggested_down"] is None
+    # 其余键原样透传
+    assert out[0]["credits_used"] == 1500
 
 
 def test_sorting():

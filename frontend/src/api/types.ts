@@ -104,6 +104,18 @@ export interface ReportRecoRow {
   usage_rate: number;
   suggested_tier: string;
 }
+// 使用率阈值模型：全量用户行（带升/降一档建议）
+export interface ReportUserRow {
+  email: string;
+  display_name: string;
+  department: string;
+  subscription_tier: string;
+  credits_used: number;
+  usage_limit: number;
+  usage_rate: number | null; // 后端 usage_limit=0 时为 null；前端比较时 ?? 0
+  suggested_up: string | null;
+  suggested_down: string | null;
+}
 export interface ReportResponse {
   range: { from: string | null; to: string | null };
   kpis: {
@@ -119,6 +131,7 @@ export interface ReportResponse {
   };
   upgrades: ReportRecoRow[];
   downgrades: ReportRecoRow[];
+  users: ReportUserRow[];
   est_cost_note: string;
 }
 
