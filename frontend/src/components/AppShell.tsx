@@ -19,8 +19,8 @@ export function AppShell({ active, children }: { active: NavKey; children: React
     { key: "dashboard", label: t("nav.dashboard"), path: "/" },
     { key: "modelConcentration", label: t("nav.modelConcentration"), path: "/model-concentration" },
     { key: "report", label: t("nav.report"), path: "/report" },
-    { key: "admin", label: t("nav.adminCenter"), path: "/admin/users" },
     { key: "tierRequests", label: t("nav.tierRequests"), path: "/tier-requests" },
+    { key: "admin", label: t("nav.adminCenter"), path: "/admin/users" },
   ];
 
   return (

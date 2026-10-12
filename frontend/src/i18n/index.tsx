@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 export type Lang = "zh" | "en";
@@ -43,7 +43,7 @@ export function tierLabel(key: string, withPrice = false): string {
  */
 const DICT: Record<string, { zh: string; en: string }> = {
   // Header / 通用
-  "app.title": { zh: "Kiro 使用效能看板", en: "Kiro Usage Dashboard" },
+  "app.title": { zh: "Kiro 能效分析助手", en: "Kiro Efficiency Analytics Assistant" },
   "app.admin": { zh: "管理员", en: "Admin" },
   "app.logout": { zh: "退出登录", en: "Sign out" },
   "app.language": { zh: "语言", en: "Language" },
@@ -380,6 +380,11 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     },
     [lang]
   );
+
+  // 浏览器 tab 标题随语言切换（多语言）
+  useEffect(() => {
+    document.title = DICT["app.title"][lang];
+  }, [lang]);
 
   const value = useMemo(() => ({ lang, setLang, t }), [lang, setLang, t]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

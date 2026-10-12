@@ -243,7 +243,13 @@ export function MonthlyReportPage() {
 
       {error && <Alert type="error" showIcon message={t("common.loadFailed")} description={error} style={{ marginBottom: 16 }} />}
 
-      <Spin spinning={loading}>
+      {loading && !k && (
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 240 }}>
+          <Spin size="large" />
+        </div>
+      )}
+
+      <Spin spinning={loading && !!k}>
         {k && (
           <>
             <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
