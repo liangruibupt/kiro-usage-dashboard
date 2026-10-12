@@ -335,7 +335,7 @@ const DICT: Record<string, { zh: string; en: string }> = {
   // 登录 / 回调
   "login.title": { zh: "Kiro 能效分析助手", en: "Kiro Efficiency Analytics Assistant" },
   "login.subtitle": { zh: "仅限管理员访问，请使用企业账号登录。", en: "Admins only. Please sign in with your corporate account." },
-  "login.button": { zh: "使用 Cognito 登录", en: "Sign in with Cognito" },
+  "login.button": { zh: "登录", en: "Sign in" },
   "callback.failTitle": { zh: "登录失败", en: "Sign-in failed" },
   "callback.back": { zh: "返回登录", en: "Back to sign-in" },
   "callback.finishing": { zh: "正在完成登录…", en: "Finishing sign-in…" },

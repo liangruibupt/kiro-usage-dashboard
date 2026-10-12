@@ -11,12 +11,9 @@ export function LoginPage() {
         <LanguageSwitch />
       </div>
       <Card style={{ width: 380, textAlign: "center" }}>
-        <Typography.Title level={3} style={{ marginBottom: 4 }}>
+        <Typography.Title level={3} style={{ marginBottom: 24 }}>
           {t("login.title")}
         </Typography.Title>
-        <Typography.Paragraph type="secondary">
-          {t("login.subtitle")}
-        </Typography.Paragraph>
         <Button type="primary" size="large" block onClick={() => login()}>
           {t("login.button")}
         </Button>
