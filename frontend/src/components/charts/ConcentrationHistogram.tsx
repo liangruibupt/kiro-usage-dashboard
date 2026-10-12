@@ -55,15 +55,17 @@ export function ConcentrationHistogram({
         return `${labels[i]}<br/>${t("conc.hist.users")}: <b>${buckets[i].count}</b>`;
       },
     },
-    grid: { left: 48, right: 24, top: 16, bottom: 40 },
+    grid: { left: 48, right: 24, top: 16, bottom: 56 },
     xAxis: {
       type: "category",
       data: labels,
       name: t("conc.hist.xAxis"),
       nameLocation: "middle",
-      nameGap: 28,
+      // 轴名放在刻度标签下方，留足间距避免与水平标签重叠
+      nameGap: 36,
       ...axisStyle,
-      axisLabel: { color: "#94a3b8", rotate: 45 },
+      // 水平显示刻度标签（不倾斜）；标签较密时交替隐藏以免互相遮挡
+      axisLabel: { color: "#94a3b8", rotate: 0, interval: 0, fontSize: 11 },
     },
     yAxis: {
       type: "value",
