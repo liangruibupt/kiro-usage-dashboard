@@ -86,8 +86,15 @@ export function MonthlyReportPage() {
     [data, downgradePct]
   );
   const shutdownRows = useMemo(
-    // usage_limit>0 门：排除额度缺失（usage_rate=null）的异常行，不误列为建议关停。
-    () => (data?.users ?? []).filter((r) => rate(r) <= shutdownPct && (r.usage_limit || 0) > 0),
+    // 关停候选 = 低用量 ∪ 重复订阅：
+    //   低用量门 usage_limit>0 排除额度缺失（usage_rate=null）的异常行；
+    //   重复订阅无视用量/额度门（硬结论）；undefined/false 不入 dup 分支。
+    () =>
+      (data?.users ?? []).filter((r) => {
+        const lowUsage = rate(r) <= shutdownPct && (r.usage_limit || 0) > 0;
+        const dup = r.is_duplicate_subscription === true;
+        return lowUsage || dup;
+      }),
     [data, shutdownPct]
   );
 
@@ -137,6 +144,24 @@ export function MonthlyReportPage() {
   const shutdownCols: ColumnsType<ReportUserRow> = [
     ...baseCols,
     {
+      title: t("report.col.duplicate"),
+      key: "duplicate",
+      width: 200,
+      render: (_v, r) =>
+        r.is_duplicate_subscription ? (
+          <div>
+            <Tag color="orange">{t("report.col.duplicate")}</Tag>
+            {r.primary_email ? (
+              <div style={{ color: "#64748b", fontSize: 12 }}>
+                {t("report.col.primaryEmail")}: {r.primary_email}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <span style={{ color: "#cbd5e1" }}>—</span>
+        ),
+    },
+    {
       title: t("report.col.suggest"),
       key: "suggest",
       width: 140,
@@ -149,9 +174,16 @@ export function MonthlyReportPage() {
     const header = [
       "type", "name", "email", "department", "current_tier",
       "credits_used", "usage_limit", "usage_rate", "suggested",
+      "is_duplicate", "primary_email",
     ];
     const lines = [header.map(csvCell).join(",")];
-    const push = (kind: string, rows: ReportUserRow[], suggestedOf: (r: ReportUserRow) => string) => {
+    const push = (
+      kind: string,
+      rows: ReportUserRow[],
+      suggestedOf: (r: ReportUserRow) => string,
+      dupOf: (r: ReportUserRow) => string = () => "",
+      primaryOf: (r: ReportUserRow) => string = () => ""
+    ) => {
       rows.forEach((r) => {
         lines.push(
           [
@@ -164,13 +196,21 @@ export function MonthlyReportPage() {
             csvCell(r.usage_limit),
             csvCell(((r.usage_rate ?? 0) * 100).toFixed(1) + "%"),
             csvCell(suggestedOf(r)),
+            csvCell(dupOf(r)),
+            csvCell(primaryOf(r)),
           ].join(",")
         );
       });
     };
     push("upgrade", upgradeRows, (r) => tierLabel(r.suggested_up ?? ""));
     push("downgrade", downgradeRows, (r) => tierLabel(r.suggested_down ?? ""));
-    push("shutdown", shutdownRows, () => t("report.col.suggestShutdown"));
+    push(
+      "shutdown",
+      shutdownRows,
+      () => t("report.col.suggestShutdown"),
+      (r) => (r.is_duplicate_subscription ? "Y" : "N"),
+      (r) => r.primary_email || ""
+    );
     const blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -235,6 +275,7 @@ export function MonthlyReportPage() {
             <Card size="small" title={`${t("report.shutdown")}（${t("report.count", { n: shutdownRows.length })}）`}>
               <div style={{ marginBottom: 8, color: "#94a3b8" }}>{t("report.threshold.shutdown", { pct: shutdownPct })}</div>
               <Slider min={0} max={100} value={shutdownPct} onChange={setShutdownPct} tooltip={{ formatter: (v) => `${v}%` }} />
+              <div style={{ marginBottom: 8, color: "#94a3b8" }}>{t("report.dedup.hint")}</div>
               <Table<ReportUserRow> rowKey="email" size="small" columns={shutdownCols} dataSource={shutdownRows}
                 pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50] }}
                 locale={{ emptyText: t("report.none") }} scroll={{ x: 700 }} />

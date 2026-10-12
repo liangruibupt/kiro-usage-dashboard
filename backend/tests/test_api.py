@@ -364,6 +364,59 @@ def test_report(client):
         assert "usage_rate" in u
 
 
+def test_report_dedup(client, monkeypatch):
+    """/api/report 去重集成：monkeypatch _roster 关联工号/创建时间，断言 users[] 四新键。
+
+    report_users 返回 hi@/lo@/mid@x.com 三行。名单让 hi@/mid@ 同工号 E1
+    （mid@ 创建更早=主订阅，hi@ 为重复），lo@ 空工号（独立），另造一个名单外
+    用量用户不存在（三行都在名单，故额外验证“名单外”用 roster 不含某行实现）。
+    """
+    import backend.api.main as main
+    monkeypatch.setattr(main, "_roster", lambda settings: [
+        # hi@ / mid@ 同工号 E1：mid@ 创建更早 -> mid@ 为主、hi@ 为重复。
+        {"email": "mid@x.com", "display_name": "中用", "department": "阳光云",
+         "employee_number": "E1", "created_date": "2024-01-01T00:00:00+00:00"},
+        {"email": "hi@x.com", "display_name": "高用", "department": "阳光云",
+         "employee_number": "E1", "created_date": "2024-05-01T00:00:00+00:00"},
+        # lo@ 空工号 -> 独立订阅。注意：lo@ 不在名单里（名单外用量用户）会走“关联不到”分支。
+    ])
+    r = client.get("/api/report?period=2026-09")
+    assert r.status_code == 200
+    body = r.json()
+    users = body["users"]
+    by_email = {u["email"]: u for u in users}
+
+    # 每行含四新键
+    for u in users:
+        for k in ("employee_number", "created_date",
+                  "is_duplicate_subscription", "primary_email"):
+            assert k in u
+
+    # hi@ / mid@ 同工号 E1：mid@ 为主、hi@ 为重复，primary_email 指向 mid@
+    assert by_email["mid@x.com"]["employee_number"] == "E1"
+    assert by_email["mid@x.com"]["is_duplicate_subscription"] is False
+    assert by_email["mid@x.com"]["primary_email"] == ""
+    assert by_email["hi@x.com"]["is_duplicate_subscription"] is True
+    assert by_email["hi@x.com"]["primary_email"] == "mid@x.com"
+
+    # lo@ 名单外（_roster 不含）-> 两列 ""、独立订阅
+    assert by_email["lo@x.com"]["employee_number"] == ""
+    assert by_email["lo@x.com"]["created_date"] == ""
+    assert by_email["lo@x.com"]["is_duplicate_subscription"] is False
+    assert by_email["lo@x.com"]["primary_email"] == ""
+
+    # 回归：upgrades/downgrades 吃原始 users，不加 dedup 键，断言仍成立
+    ups = {u["email"]: u["suggested_tier"] for u in body["upgrades"]}
+    downs = {d["email"]: d["suggested_tier"] for d in body["downgrades"]}
+    assert ups == {"hi@x.com": "ProPlus"}
+    assert downs == {"lo@x.com": "Pro"}
+    for u in body["upgrades"] + body["downgrades"]:
+        assert "is_duplicate_subscription" not in u
+    # 升/降一档建议仍在
+    assert by_email["lo@x.com"]["suggested_up"] == "Power"
+    assert by_email["lo@x.com"]["suggested_down"] == "ProPlus"
+
+
 # --- 组级授权中间件（R2/R4）------------------------------------------------
 def _req_with_claims(groups):
     """构造一个带 API Gateway JWT authorizer 上下文的 ASGI scope 扩展。

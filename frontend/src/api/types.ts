@@ -115,6 +115,10 @@ export interface ReportUserRow {
   usage_rate: number | null; // 后端 usage_limit=0 时为 null；前端比较时 ?? 0
   suggested_up: string | null;
   suggested_down: string | null;
+  employee_number?: string;
+  created_date?: string;
+  is_duplicate_subscription?: boolean;
+  primary_email?: string;
 }
 export interface ReportResponse {
   range: { from: string | null; to: string | null };

@@ -23,6 +23,7 @@ import os
 from datetime import datetime, timezone
 
 import boto3
+from botocore.exceptions import ParamValidationError
 
 s3 = boto3.client("s3")
 ddb = boto3.resource("dynamodb")
@@ -42,6 +43,12 @@ SUBSCRIPTION_APP_ARN = os.environ.get("SUBSCRIPTION_APP_ARN", "")
 GROUP_CSV_BUCKET = os.environ.get("GROUP_CSV_BUCKET", "")
 GROUP_CSV_KEY = os.environ.get("GROUP_CSV_KEY", "")
 UNGROUPED = "未分组"
+
+# Identity Center 企业扩展 schema（含 employeeNumber）。describe_user 带此入参才返回扩展。
+_ENTERPRISE_EXT = "aws:identitystore:enterprise"
+# 进程级短路：一旦确认运行时的 boto3 不认 Extensions 入参，后续不再带扩展重试，
+# 把回退代价从 O(用户数) 降到 O(1)。orchestrator 确认生产 boto3=1.42.97 支持，此开关常态为 False。
+_ext_unsupported = False
 
 # 加档组（非部门）：与部门组叠加只影响计费档位，不作为部门归属。
 ADDON_GROUP_PREFIXES = ("kiro-power", "kiro-promax", "kiro-proplus", "kiro-pro")
@@ -76,14 +83,99 @@ def _load_mock() -> dict[str, dict]:
     return json.loads(body)
 
 
-def _user_email_display(ids, uid: str) -> tuple[str, str]:
-    user = ids.describe_user(IdentityStoreId=IDENTITY_STORE_ID, UserId=uid)
+def _iso_created_at(created_at) -> str:
+    """describe_user 顶层 CreatedAt(datetime) -> ISO8601 字符串。
+
+    None -> ""；datetime -> .isoformat()（boto3 返回 timezone-aware datetime）；
+    其它/异常 -> str(created_at) 或 ""（窄 try，不吞无关异常）。
+    """
+    if created_at is None:
+        return ""
+    try:
+        return created_at.isoformat()
+    except AttributeError:
+        return str(created_at) if created_at else ""
+
+
+def _employee_number_from(extensions) -> str:
+    """从 describe_user 的 Extensions 取 employeeNumber，容忍 None/list/dict 三形态。
+
+    - None/假值 -> ""（orchestrator 确认事实③：用户无 employeeNumber 时 Extensions 返回 None）。
+    - dict -> 递归找键名大小写不敏感且以 'employeenumber' 结尾的键（覆盖命名空间前缀），
+      命中非空即 str(v).strip()。
+    - list -> 逐元素递归。
+    全程不抛异常。
+    """
+    def _find(node) -> str:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if isinstance(k, str) and k.lower().endswith("employeenumber") and v:
+                    s = str(v).strip()
+                    if s:
+                        return s
+            for v in node.values():
+                found = _find(v)
+                if found:
+                    return found
+        elif isinstance(node, (list, tuple)):
+            for item in node:
+                found = _find(item)
+                if found:
+                    return found
+        return ""
+
+    if not extensions:
+        return ""
+    return _find(extensions)
+
+
+def _is_param_unsupported(e: Exception) -> bool:
+    """判断异常是否为「Extensions 入参不被运行时识别」（旧 boto3）。
+
+    保守口径：仅 ParamValidationError / TypeError，或错误消息同时含 'Extensions'
+    与（'Unknown parameter' 或 'unexpected keyword'）才算。权限/资源/限流类不命中。
+    """
+    if isinstance(e, (ParamValidationError, TypeError)):
+        return True
+    msg = str(e)
+    return "Extensions" in msg and ("Unknown parameter" in msg or "unexpected keyword" in msg)
+
+
+def _describe_user_with_ext(ids, uid: str) -> dict:
+    """describe_user 带企业扩展入参；旧 boto3 不认入参时进程级短路回退为不带扩展。
+
+    仅对「入参不被支持」类错误回退（置 _ext_unsupported=True）；其它异常
+    （AccessDenied/ResourceNotFound/Throttling 等）原样 raise，绝不吞。
+    """
+    global _ext_unsupported
+    if not _ext_unsupported:
+        try:
+            return ids.describe_user(
+                IdentityStoreId=IDENTITY_STORE_ID, UserId=uid,
+                Extensions=[_ENTERPRISE_EXT])
+        except Exception as e:  # noqa: BLE001 —— 立即分流：仅入参不支持回退，其它重抛
+            if _is_param_unsupported(e):
+                _ext_unsupported = True
+            else:
+                raise
+    return ids.describe_user(IdentityStoreId=IDENTITY_STORE_ID, UserId=uid)
+
+
+def _user_email_display(ids, uid: str) -> tuple[str, str, str, str]:
+    """返回 (email_lower, display_name, created_date_iso, employee_number)。
+
+    created_date：describe_user 顶层 CreatedAt(datetime) 转 ISO 字符串，取不到 -> ""。
+    employee_number：企业扩展里的 employeeNumber，取不到/空 -> ""。
+    """
+    user = _describe_user_with_ext(ids, uid)
     emails = user.get("Emails", [])
     email = next((e["Value"] for e in emails if e.get("Primary")), None)
     if not email and emails:
         email = emails[0]["Value"]
     display = user.get("DisplayName") or user.get("UserName", "")
-    return (email.strip().lower() if email else ""), display
+    created_date = _iso_created_at(user.get("CreatedAt"))
+    employee_number = _employee_number_from(user.get("Extensions"))
+    return (email.strip().lower() if email else ""), display, created_date, employee_number
 
 
 def _group_members(ids, gid: str) -> list[str]:
@@ -95,12 +187,21 @@ def _group_members(ids, gid: str) -> list[str]:
     return uids
 
 
-def _add(result: dict, email: str, display: str, group: str | None) -> None:
+def _add(result: dict, email: str, display: str, group: str | None,
+         created_date: str = "", employee_number: str = "") -> None:
     if not email:
         return
-    entry = result.setdefault(email, {"department": UNGROUPED, "groups": [], "display_name": display})
+    entry = result.setdefault(email, {
+        "department": UNGROUPED, "groups": [], "display_name": display,
+        "created_date": "", "employee_number": "",
+    })
     if display and not entry.get("display_name"):
         entry["display_name"] = display
+    # created_date / employee_number 是订阅（= IdC 用户 = email）属性，首个非空为准，不覆盖。
+    if created_date and not entry.get("created_date"):
+        entry["created_date"] = created_date
+    if employee_number and not entry.get("employee_number"):
+        entry["employee_number"] = employee_number
     if group:
         if group not in entry["groups"]:
             entry["groups"].append(group)
@@ -125,20 +226,20 @@ def _load_from_subscription_app(ids, sso) -> dict[str, dict]:
     for a in assignments:
         pid, ptype = a["PrincipalId"], a["PrincipalType"]
         if ptype == "USER":
-            email, display = _user_email_display(ids, pid)
-            _add(result, email, display, None)  # 直接分配，无组
+            email, display, created, empno = _user_email_display(ids, pid)
+            _add(result, email, display, None, created, empno)  # 直接分配，无组
         elif ptype == "GROUP":
             grp = ids.describe_group(IdentityStoreId=IDENTITY_STORE_ID, GroupId=pid)
             gname = grp.get("DisplayName", pid)
             zh = _extract_zh_dept(grp.get("Description") or "")
             for uid in _group_members(ids, pid):
-                email, display = _user_email_display(ids, uid)
+                email, display, created, empno = _user_email_display(ids, uid)
                 # 加档组：成员仍计入订阅（录入 result）但不作为部门；
                 # 部门组：用中文部门名（提不出中文回退英文组名）。
                 if _is_addon_group(gname):
-                    _add(result, email, display, None)
+                    _add(result, email, display, None, created, empno)
                 else:
-                    _add(result, email, display, zh or gname)
+                    _add(result, email, display, zh or gname, created, empno)
     return result
 
 
@@ -152,8 +253,8 @@ def _load_from_all_groups(ids) -> dict[str, dict]:
     for g in groups:
         gname = g.get("DisplayName", g["GroupId"])
         for uid in _group_members(ids, g["GroupId"]):
-            email, display = _user_email_display(ids, uid)
-            _add(result, email, display, gname)
+            email, display, created, empno = _user_email_display(ids, uid)
+            _add(result, email, display, gname, created, empno)
     return result
 
 
@@ -280,6 +381,8 @@ def handler(event, context):
                 "department": info.get("department", UNGROUPED) or UNGROUPED,
                 "groups": info.get("groups", []),
                 "display_name": info.get("display_name", ""),
+                "employee_number": info.get("employee_number", "") or "",
+                "created_date": info.get("created_date", "") or "",
                 "synced_at": now,
             })
             written += 1

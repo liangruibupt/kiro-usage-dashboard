@@ -167,6 +167,64 @@ def summary(
     }
 
 
+def _dedup_sort_key(row: dict):
+    """去重排序 key：空 created_date 排最后；ISO8601 字符串升序==时序；email 兜底。
+
+    ISO8601 字典序 == 时序，故 created_date 直接字符串比较。cd=="" 为 True(1) 排在
+    有值(False/0) 之后，保证缺失创建时间的订阅绝不会被当成「最早」而误选为主订阅。
+    """
+    cd = str(row.get("created_date") or "").strip()
+    return (cd == "", cd, str(row.get("email") or ""))
+
+
+def annotate_duplicate_subscriptions(users: list[dict]) -> list[dict]:
+    """按 employee_number 分组标记重复订阅（纯函数，不原地改，返回新 list）。
+
+    口径：
+      1) 分组键 = str(employee_number).strip()。空串 = 独立订阅，不参与分组，
+         直接 is_duplicate_subscription=False / primary_email=""。
+      2) 非空分组内按 _dedup_sort_key 排序（空 created_date 排最后，其余按 ISO 升序，
+         email 兜底）：首行为主订阅 (False, primary_email="")；其余为重复订阅
+         (True, primary_email=主订阅 email)。
+      3) 单条组视为主；组内全缺 created_date 时按 email 升序定主（排序 key 兜底）。
+      4) 返回顺序与输入一致（用 email->标记映射回填，不打乱 ORDER BY usage_rate DESC）。
+
+    对输入零信任：employee_number/created_date 非字符串时 str(...).strip()，不抛异常。
+    """
+    # 1) 分组：按工号分桶（空工号跳过，后续直接标独立）。
+    groups: dict[str, list[dict]] = {}
+    for row in users:
+        empno = str(row.get("employee_number") or "").strip()
+        if not empno:
+            continue
+        groups.setdefault(empno, []).append(row)
+
+    # 2) 每组排序定主，产出 email -> (is_duplicate, primary_email) 标记映射。
+    marks: dict[str, tuple[bool, str]] = {}
+    for members in groups.values():
+        ordered = sorted(members, key=_dedup_sort_key)
+        primary = ordered[0]
+        primary_email = str(primary.get("email") or "")
+        for i, row in enumerate(ordered):
+            email = str(row.get("email") or "")
+            if i == 0:
+                marks[email] = (False, "")
+            else:
+                marks[email] = (True, primary_email)
+
+    # 3) 回填（保持输入顺序）；空工号/未命中 -> 独立订阅。
+    out: list[dict] = []
+    for row in users:
+        email = str(row.get("email") or "")
+        is_dup, primary_email = marks.get(email, (False, ""))
+        out.append({
+            **row,
+            "is_duplicate_subscription": is_dup,
+            "primary_email": primary_email,
+        })
+    return out
+
+
 @app.get("/api/report")
 def report(
     period: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}$"),
@@ -201,8 +259,20 @@ def report(
         },
     }
     users = layer.run(q.report_users(date_from, date_to, identity_filter=idf))
-    upgrades, downgrades = _recommendations(users)       # 保留（兼容 + 不破 test_report）
-    users_annotated = _annotate_tier_steps(users)        # 使用率阈值模型：全量名单 + 升/降一档建议
+    upgrades, downgrades = _recommendations(users)       # 保留（兼容 + 不破 test_report；吃原始 users）
+    # 关联注册名单两列（by lowercased email），名单外用量用户 -> 两列 ""（独立订阅）。
+    roster_by_email = {u["email"]: u for u in _roster(settings)}
+    enriched = []
+    for u in users:
+        email = (u.get("email") or "").strip().lower()
+        person = roster_by_email.get(email) or {}
+        enriched.append({
+            **u,
+            "employee_number": person.get("employee_number", "") or "",
+            "created_date": person.get("created_date", "") or "",
+        })
+    # 先补升/降一档建议，再标去重（两者都是行级透传，互不干扰）。
+    users_annotated = annotate_duplicate_subscriptions(_annotate_tier_steps(enriched))
     return {
         "range": {"from": date_from, "to": date_to},
         "kpis": kpis,
@@ -636,7 +706,7 @@ def _roster(settings: Settings) -> list[dict]:
         import boto3
         ddb = boto3.client("dynamodb", region_name=settings.region)
         kw = {"TableName": table,
-              "ProjectionExpression": "user_key, display_name, department"}
+              "ProjectionExpression": "user_key, display_name, department, employee_number, created_date"}
         while True:
             resp = ddb.scan(**kw)
             for it in resp.get("Items", []):
@@ -644,6 +714,9 @@ def _roster(settings: Settings) -> list[dict]:
                     "email": (it.get("user_key", {}).get("S") or "").strip().lower(),
                     "display_name": it.get("display_name", {}).get("S") or "",
                     "department": it.get("department", {}).get("S") or "\u672a\u5206\u7ec4",
+                    # FEAT-001 写入的两列；旧条目无列读 "" -> 天然按独立订阅处理，无需迁移。
+                    "employee_number": it.get("employee_number", {}).get("S") or "",
+                    "created_date": it.get("created_date", {}).get("S") or "",
                 })
             lek = resp.get("LastEvaluatedKey")
             if not lek:
