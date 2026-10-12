@@ -111,7 +111,7 @@ export function UsersTable({ range, departments }: Props) {
         dataIndex: "credits_used",
         width: 100,
         sorter: true,
-        render: (v: number) => v.toLocaleString(numLocale, { maximumFractionDigits: 1 }),
+        render: (v: number) => v.toLocaleString(numLocale, { maximumFractionDigits: 2 }),
       },
       {
         title: t("users.col.limit"),

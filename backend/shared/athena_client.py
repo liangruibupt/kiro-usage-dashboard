@@ -228,7 +228,7 @@ class Queries:
                max_by(display_name, date) AS display_name,
                max_by(department, date) AS department,
                max_by(subscription_tier, date) AS subscription_tier,
-               round(sum(credits_used),1) AS credits_used,
+               round(sum(credits_used),2) AS credits_used,
                round(max_by(usage_limit, date),1) AS usage_limit,
                round(sum(credits_used)/nullif(max_by(usage_limit, date),0),4) AS usage_rate
         FROM {self.t_daily}
@@ -253,9 +253,9 @@ class Queries:
                max_by(display_name, date) AS display_name,
                max_by(department, date) AS department,
                max_by(subscription_tier, date) AS subscription_tier,
-               round(sum(credits_used),1) AS credits_used,
+               round(sum(credits_used),2) AS credits_used,
                round(max_by(usage_limit, date),1) AS usage_limit,
-               round(max_by(usage_limit, date) - sum(credits_used),1) AS balance,
+               round(max_by(usage_limit, date) - sum(credits_used),2) AS balance,
                round(sum(credits_used)/nullif(max_by(usage_limit, date),0),4) AS usage_rate,
                (max_by(usage_limit, date) > 0 AND sum(credits_used) > max_by(usage_limit, date)) AS is_overage,
                round(sum(est_cost) + {_tier_monthly_sql('max_by(subscription_tier, date)')},2) AS est_cost,
@@ -406,7 +406,7 @@ class Queries:
                max(display_name) AS display_name,
                max(department) AS department,
                max_by(subscription_tier, date) AS subscription_tier,
-               round(sum(credits_used),1) AS credits_used
+               round(sum(credits_used),2) AS credits_used
         FROM {self.t_daily}
         {w}
         GROUP BY email
@@ -438,9 +438,9 @@ class Queries:
                max(display_name) AS display_name,
                max(department) AS department,
                max_by(subscription_tier, date) AS subscription_tier,
-               round(sum(credits_used),1) AS credits_used,
+               round(sum(credits_used),2) AS credits_used,
                round(max_by(usage_limit, date),1) AS usage_limit,
-               round(greatest(max_by(usage_limit, date) - sum(credits_used), 0),1) AS balance,
+               round(greatest(max_by(usage_limit, date) - sum(credits_used), 0),2) AS balance,
                round(sum(credits_used)/nullif(max_by(usage_limit, date),0),4) AS usage_rate,
                (max_by(usage_limit, date) > 0 AND sum(credits_used) > max_by(usage_limit, date)) AS is_overage,
                round(sum(est_cost) + {_tier_monthly_sql('max_by(subscription_tier, date)')},2) AS est_cost,

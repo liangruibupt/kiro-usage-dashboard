@@ -15,6 +15,8 @@ export function MonthlyReportPage() {
   const { t, lang } = useI18n();
   const numLocale = lang === "en" ? "en-US" : "zh-CN";
   const fmt = (n: number) => n.toLocaleString(numLocale, { maximumFractionDigits: 1 });
+  // 单用户用量保留 2 位小数，避免极少量用量（如 0.04）被显示成 0
+  const fmt2 = (n: number) => n.toLocaleString(numLocale, { maximumFractionDigits: 2 });
 
   const [mode, setMode] = useState<FilterMode>("range");
   const [period, setPeriod] = useState<string | undefined>(undefined);
@@ -112,7 +114,7 @@ export function MonthlyReportPage() {
       title: t("report.col.usage"),
       key: "usage",
       width: 150,
-      render: (_v, r) => `${fmt(r.credits_used)} / ${fmt(r.usage_limit)}`,
+      render: (_v, r) => `${fmt2(r.credits_used)} / ${fmt(r.usage_limit)}`,
     },
     {
       title: t("report.col.rate"),
