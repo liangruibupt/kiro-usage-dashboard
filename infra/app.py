@@ -18,7 +18,7 @@ def _cfg(app: cdk.App) -> dict:
             "creditUnitPrice", "topN", "adminEmail",
             "sesSender", "reportRecipients",
             "callbackUrls", "logoutUrls", "cognitoDomainPrefix", "corsOrigins",
-            "agentRuntimeArn"]
+            "appUrl", "agentRuntimeArn"]
     return {k: app.node.try_get_context(k) for k in keys}
 
 

@@ -13,9 +13,12 @@
     "kiroSourcePrefix": "reports",
     "creditUnitPrice": "0.04",
     "topN": "15",
+    "_adminEmail_说明": "首个管理员邮箱（部署时自动创建该管理员并发邀请邮件，必填）",
     "adminEmail": "admin@example.com",
     "sesSender": "verified-sender@example.com",
     "reportRecipients": "admin@example.com",
+    "_appUrl_说明": "看板登录地址（会写入首个管理员的邀请邮件正文）。首次部署可留空，部署完 WebStack 拿到 CloudFront 域后回填，再重部署 Auth 栈即可。",
+    "appUrl": "https://xxxxxxxxxxxx.cloudfront.net",
     "agentRuntimeArn": "arn:aws:bedrock-agentcore:<region>:<ACCOUNT_ID>:runtime/kiro_usage_agent-xxxxxxxxxx"
   }
 }

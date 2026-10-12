@@ -14,6 +14,7 @@
     "creditUnitPrice": "0.04",
     "topN": "15",
     "adminEmail": "admin@example.com",
+    "appUrl": "",
     "sesSender": "",
     "reportRecipients": "",
     "agentRuntimeArn": "",

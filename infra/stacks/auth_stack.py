@@ -10,8 +10,11 @@
 from __future__ import annotations
 
 from aws_cdk import (
-    Stack, RemovalPolicy, Duration, CfnOutput,
+    Stack, RemovalPolicy, Duration, CfnOutput, CustomResource,
     aws_cognito as cognito,
+    aws_lambda as lambda_,
+    aws_iam as iam,
+    custom_resources as cr,
 )
 from constructs import Construct
 
@@ -20,6 +23,15 @@ class AuthStack(Stack):
     def __init__(self, scope: Construct, cid: str, *, cfg: dict, **kw):
         super().__init__(scope, cid, **kw)
 
+        # --- 首个管理员邮箱校验（synth 阶段阻止无效部署）---
+        admin_email = (cfg.get("adminEmail") or "").strip()
+        if admin_email == "" or admin_email.lower() == "admin@example.com":
+            raise ValueError(
+                "请在 infra/cdk.json 的 context.adminEmail 填写真实的首个管理员邮箱"
+                "（部署时将自动创建该管理员并发送邀请邮件）；"
+                "当前为空或仍是占位符 admin@example.com，已中止 synth。"
+            )
+
         # 回调 URL：前端 CloudFront 域在 WebStack 之后才有；v1 先放本地 + 占位，
         # 部署 WebStack 后可用 context 覆盖 callbackUrls / logoutUrls。
         callback_urls = _as_list(cfg.get("callbackUrls")) or [
@@ -27,6 +39,29 @@ class AuthStack(Stack):
         logout_urls = _as_list(cfg.get("logoutUrls")) or [
             "http://localhost:5173/", "http://localhost:5173/logout"]
         domain_prefix = cfg.get("cognitoDomainPrefix") or f"kirodash-{self.account}"
+
+        # 登录地址（部署 WebStack 拿到 CloudFront 域后回填 context.appUrl；首次部署可能为空）。
+        # 用于邀请邮件正文，让首个管理员知道去哪登录。为空时邮件给出"向管理员索取地址"提示。
+        app_url = (cfg.get("appUrl") or "").strip()
+        _login_line_zh = (f"登录地址：{app_url}" if app_url
+                          else "登录地址：请向部署人员索取看板访问地址。")
+        _login_line_en = (f"Sign-in URL: {app_url}" if app_url
+                          else "Sign-in URL: please ask your deployment admin for the dashboard URL.")
+        # 自定义邀请邮件（Cognito 自带邮件）：正文必须含 {username} 与 {####}（临时密码），
+        # 其余文本自定义——把登录地址放进来。中英双语写在同一封。
+        invite_subject = "Kiro 能效分析助手 账号邀请 / Kiro Efficiency Analytics Assistant invitation"
+        invite_body = (
+            "您的 Kiro 能效分析助手 管理员账号已创建。<br/>"
+            f"{_login_line_zh}<br/>"
+            "用户名：{username}<br/>"
+            "临时密码：{####}<br/>"
+            "首次登录后请立即修改密码。<br/><br/>"
+            "Your Kiro Efficiency Analytics Assistant admin account has been created.<br/>"
+            f"{_login_line_en}<br/>"
+            "Username: {username}<br/>"
+            "Temporary password: {####}<br/>"
+            "Please change your password on first sign-in."
+        )
 
         # --- User Pool ---
         pool = cognito.UserPool(
@@ -43,6 +78,11 @@ class AuthStack(Stack):
                 require_digits=True, require_symbols=True,
             ),
             account_recovery=cognito.AccountRecovery.EMAIL_ONLY,
+            # 自定义邀请邮件：含登录地址 + 用户名 + 临时密码（中英双语）。
+            user_invitation=cognito.UserInvitationConfig(
+                email_subject=invite_subject,
+                email_body=invite_body,
+            ),
             removal_policy=RemovalPolicy.DESTROY,        # 测试环境；生产改 RETAIN
         )
 
@@ -73,12 +113,82 @@ class AuthStack(Stack):
         )
 
         # --- admins 组（R2）---
-        cognito.CfnUserPoolGroup(
+        admins_group = cognito.CfnUserPoolGroup(
             self, "AdminsGroup",
             user_pool_id=pool.user_pool_id,
             group_name="admins",
             description="Kiro 看板管理员（可访问全量数据）",
         )
+
+        # --- 首次部署自动创建首个管理员（custom resource）---
+        # 幂等：用户已存在时跳过创建、不重发邀请邮件、不改密码；AddUserToGroup 对已在组用户幂等。
+        # 邮件走 Cognito 自带（不传 MessageAction），由 Cognito 发含用户名+临时密码的邀请邮件。
+        first_admin_fn = lambda_.Function(
+            self, "FirstAdminFn",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            handler="index.handler",
+            timeout=Duration.minutes(2),
+            environment={
+                "USER_POOL_ID": pool.user_pool_id,
+                "ADMIN_EMAIL": admin_email,
+            },
+            code=lambda_.Code.from_inline(
+                "import os\n"
+                "import boto3\n"
+                "\n"
+                "\n"
+                "def handler(event, context):\n"
+                "    request_type = event.get('RequestType')\n"
+                "    if request_type == 'Delete':\n"
+                "        # 不删除管理员账户，避免误删。\n"
+                "        return {'PhysicalResourceId': os.environ['ADMIN_EMAIL']}\n"
+                "\n"
+                "    pool_id = os.environ['USER_POOL_ID']\n"
+                "    email = os.environ['ADMIN_EMAIL']\n"
+                "    client = boto3.client('cognito-idp')\n"
+                "\n"
+                "    # 1. 创建管理员用户；不传 MessageAction，Cognito 自动发邀请邮件。\n"
+                "    try:\n"
+                "        client.admin_create_user(\n"
+                "            UserPoolId=pool_id,\n"
+                "            Username=email,\n"
+                "            UserAttributes=[\n"
+                "                {'Name': 'email', 'Value': email},\n"
+                "                {'Name': 'email_verified', 'Value': 'true'},\n"
+                "            ],\n"
+                "            DesiredDeliveryMediums=['EMAIL'],\n"
+                "        )\n"
+                "    except client.exceptions.UsernameExistsException:\n"
+                "        # 已存在：跳过创建、不重发邮件、不改密码（幂等）。\n"
+                "        pass\n"
+                "\n"
+                "    # 2. 加入 admins 组（对已在组用户幂等）。\n"
+                "    client.admin_add_user_to_group(\n"
+                "        UserPoolId=pool_id,\n"
+                "        Username=email,\n"
+                "        GroupName='admins',\n"
+                "    )\n"
+                "    return {'PhysicalResourceId': email}\n"
+            ),
+        )
+        # 最小权限：仅建用户 + 加组，限定到本 User Pool ARN。
+        first_admin_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["cognito-idp:AdminCreateUser", "cognito-idp:AdminAddUserToGroup"],
+            resources=[pool.user_pool_arn],
+        ))
+
+        first_admin_provider = cr.Provider(
+            self, "FirstAdminProvider",
+            on_event_handler=first_admin_fn,
+        )
+        first_admin = CustomResource(
+            self, "FirstAdmin",
+            service_token=first_admin_provider.service_token,
+            properties={"AdminEmail": admin_email},
+        )
+        # custom resource 在 User Pool + admins 组创建之后执行。
+        first_admin.node.add_dependency(admins_group)
+        first_admin.node.add_dependency(pool)
 
         # --- 暴露给其它 stack ---
         self.user_pool = pool

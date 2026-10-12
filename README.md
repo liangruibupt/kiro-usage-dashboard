@@ -125,7 +125,8 @@ python3.12 -m venv .venv
 | `identityStoreId` / `identityStoreRegion` / `ssoInstanceArn` / `subscriptionAppArn` | Identity Center / 订阅应用信息（真实模式，取注册名单与部门） |
 | `groupCsvBucket` / `groupCsvKey` | 备选部门来源：Kiro 导出的 user→group CSV |
 | `creditUnitPrice` | credit 单价（Kiro 官方超额价） |
-| `adminEmail` | 首个管理员邮箱（记录用） |
+| `adminEmail` | **必填**：首个管理员邮箱。部署 Auth 栈时自动创建该 Cognito 用户、加入 `admins` 组，并由 Cognito 发送含临时密码的邀请邮件；留空或仍为占位符 `admin@example.com` 时 synth 直接报错阻止部署。 |
+| `appUrl` | 看板登录地址（CloudFront 域），写入首个管理员的邀请邮件正文告知去哪登录。首次部署可留空（邮件改为提示向部署人员索取地址），部署 Web 拿到 CloudFront 域后回填再重部署 Auth 栈。 |
 | `sesSender` | **已在 SES 验证**的发件邮箱（月度报告 / 调档回执邮件用） |
 | `reportRecipients` | （可选）额外报告收件人，逗号分隔；与 admins 组取并集 |
 | `agentRuntimeArn` | NL 问答 Agent 的 Runtime ARN；先留空，部署 Agent 后回填 |
@@ -169,8 +170,11 @@ aws lambda invoke --function-name <EtlFnName> --profile <PROFILE> --region <REGI
   --cli-binary-format raw-in-base64-out --payload '{"backfill": true}' --cli-read-timeout 900 /tmp/etl.json && cat /tmp/etl.json
 ```
 
-### 9. 创建首个管理员并登录
-见下文「四、管理员与用户」，然后访问 `https://<cloudfront-domain>` 登录。
+### 9. 首个管理员（自动创建）并登录
+部署 Auth 栈时已按 `adminEmail` 自动创建首个管理员并发送邀请邮件，无需手工建号。
+拿到 CloudFront 域后把 `appUrl` 回填 `cdk.json` 并重部署 Auth 栈，邀请邮件正文即含登录地址。
+首个管理员收到邮件后，用其中的用户名 + 临时密码访问 `https://<cloudfront-domain>` 登录，
+首次登录会被要求设置新密码。后续新增管理员见下文「四、管理员与用户」。
 
 ### 10.（可选）部署 NL 问答 Agent
 需 Docker 构建 arm64 容器推到 ECR，再用 `backend/agent/deploy.py` 部署到 AgentCore Runtime，
@@ -218,6 +222,8 @@ aws lambda invoke --function-name <EtlFnName> --profile <PROFILE> --region <REGI
 看板登录用户 = Cognito User Pool 里的用户，且必须在 `admins` 组（否则接口 403）。
 User Pool 已关闭自助注册，由管理员创建用户。密码策略：≥12 位，含大小写、数字、符号。
 
+- **首个管理员**：部署 Auth 栈时按 `adminEmail` 自动创建、入组并发邀请邮件（含登录地址 + 临时密码），
+  首次登录改密即可，无需手工操作。
 - **推荐**：登录看板 →「管理员管理」页 onboard 新管理员（自动建用户 + 入组 + 发邀请邮件）。
 - **后备（AWS CLI）**：
   ```bash
