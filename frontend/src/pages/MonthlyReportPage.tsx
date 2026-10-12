@@ -245,7 +245,7 @@ export function MonthlyReportPage() {
 
       {loading && !k && (
         <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 240 }}>
-          <Spin size="large" />
+          <Spin />
         </div>
       )}
 

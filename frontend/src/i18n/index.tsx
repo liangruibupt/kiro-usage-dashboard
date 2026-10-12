@@ -333,7 +333,7 @@ const DICT: Record<string, { zh: string; en: string }> = {
   "chat.suggest.4": { zh: "最近的 Credits 使用趋势如何？", en: "What's the recent credits usage trend?" },
 
   // 登录 / 回调
-  "login.title": { zh: "Kiro 使用效能看板", en: "Kiro Usage Dashboard" },
+  "login.title": { zh: "Kiro 能效分析助手", en: "Kiro Efficiency Analytics Assistant" },
   "login.subtitle": { zh: "仅限管理员访问，请使用企业账号登录。", en: "Admins only. Please sign in with your corporate account." },
   "login.button": { zh: "使用 Cognito 登录", en: "Sign in with Cognito" },
   "callback.failTitle": { zh: "登录失败", en: "Sign-in failed" },
