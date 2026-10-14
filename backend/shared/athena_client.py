@@ -49,6 +49,11 @@ _SORTABLE_COLUMNS = {
 }
 _SORT_DIRS = {"asc", "desc"}
 
+# query_usage 的 metric / group_by 白名单：metric 会作为别名进入 SELECT/ORDER BY，
+# 必须在构造 SQL 前校验，防止注入。
+_ALLOWED_METRICS = frozenset({"credits", "messages", "est_cost", "active_days", "users"})
+_ALLOWED_GROUP_BY = frozenset({"none", "department", "subscription_tier", "model", "date", "user"})
+
 
 def _q(value: str) -> str:
     """把字符串安全地作为 SQL 单引号字面量（转义单引号）。"""
@@ -283,6 +288,10 @@ class Queries:
         路径：metric=messages 或 group_by=model 走模型长表（fact_user_model_daily）；
         其余走日表按用户聚合（fact_user_daily）。
         """
+        if metric not in _ALLOWED_METRICS:
+            raise ValueError(f"invalid metric: {metric!r}")
+        if group_by not in _ALLOWED_GROUP_BY:
+            raise ValueError(f"invalid group_by: {group_by!r}")
         filters = filters or {}
         direction = "asc" if str(sort).lower() == "asc" else "desc"
         limit = _valid_limit(limit)

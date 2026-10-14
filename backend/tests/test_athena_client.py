@@ -109,6 +109,19 @@ def test_invalid_date_raises(q):
         q.trend(date_to="not-a-date")
 
 
+def test_query_usage_rejects_invalid_metric_and_group_by(q):
+    with pytest.raises(ValueError):
+        q.query_usage(metric="credits); DROP")
+    with pytest.raises(ValueError):
+        q.query_usage(metric="credits", group_by="email; DROP")
+
+
+def test_query_usage_accepts_all_allowed_combinations(q):
+    for m in ("credits", "messages", "est_cost", "active_days", "users"):
+        for g in ("none", "department", "subscription_tier", "model", "date", "user"):
+            assert q.query_usage(metric=m, group_by=g).sql.startswith("SELECT")
+
+
 def test_identity_filter_injected(q):
     s = q.summary(identity_filter={"email": "Admin@Ex.com"}).sql
     assert "lower(email) = 'admin@ex.com'" in s

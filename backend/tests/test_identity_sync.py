@@ -187,14 +187,14 @@ def test_user_email_display_integration(h):
         def describe_user(self, **kwargs):
             return {
                 "UserId": kwargs["UserId"],
-                "Emails": [{"Value": "User@X.com", "Primary": True}],
+                "Emails": [{"Value": "User@Example.com", "Primary": True}],
                 "DisplayName": "张三",
                 "CreatedAt": created,
                 "Extensions": [{"enterprise": {"employeeNumber": "E42"}}],
             }
 
     email, display, created_iso, empno = h._user_email_display(_Ids(), "u1")
-    assert email == "user@x.com"
+    assert email == "user@example.com"
     assert display == "张三"
     assert created_iso == created.isoformat()
     assert empno == "E42"
@@ -204,14 +204,14 @@ def test_user_email_display_empty_extensions(h):
     class _Ids:
         def describe_user(self, **kwargs):
             return {
-                "Emails": [{"Value": "a@x.com", "Primary": True}],
+                "Emails": [{"Value": "a@example.com", "Primary": True}],
                 "DisplayName": "甲",
                 "CreatedAt": None,
                 "Extensions": None,
             }
 
     email, display, created_iso, empno = h._user_email_display(_Ids(), "u1")
-    assert email == "a@x.com"
+    assert email == "a@example.com"
     assert created_iso == ""
     assert empno == ""
 
@@ -250,7 +250,7 @@ def test_handler_mock_mode_writes_two_columns(h, monkeypatch):
     sink = []
     monkeypatch.setattr(h, "MOCK_MODE", True)
     monkeypatch.setattr(h, "_load_mock", lambda: {
-        "a@x.com": {
+        "a@example.com": {
             "department": "研发", "groups": [], "display_name": "甲",
             "employee_number": "E1", "created_date": "2024-01-01T00:00:00+00:00",
         },
@@ -267,7 +267,7 @@ def test_handler_mock_mode_writes_two_columns(h, monkeypatch):
     assert out["mock_mode"] is True
     assert len(sink) == 1
     item = sink[0]
-    assert item["user_key"] == "a@x.com"
+    assert item["user_key"] == "a@example.com"
     assert item["employee_number"] == "E1"
     assert item["created_date"] == "2024-01-01T00:00:00+00:00"
     # 保留原有列
@@ -281,7 +281,7 @@ def test_handler_mock_mode_defaults_missing_columns_to_empty(h, monkeypatch):
     sink = []
     monkeypatch.setattr(h, "MOCK_MODE", True)
     monkeypatch.setattr(h, "_load_mock", lambda: {
-        "b@x.com": {"department": "研发", "groups": [], "display_name": "乙"},
+        "b@example.com": {"department": "研发", "groups": [], "display_name": "乙"},
     })
 
     class _Ddb:

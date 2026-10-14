@@ -2,12 +2,74 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "StarResourceServices",
+      "Sid": "CloudFormationAppAndToolkitStacks",
+      "Effect": "Allow",
+      "Action": "cloudformation:*",
+      "Resource": [
+        "arn:aws:cloudformation:*:*:stack/KiroDash-*/*",
+        "arn:aws:cloudformation:*:*:stack/CDKToolkit/*"
+      ]
+    },
+    {
+      "Sid": "S3AppAndCdkBuckets",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::kirodash-*",
+        "arn:aws:s3:::kirodash-*/*",
+        "arn:aws:s3:::cdk-hnb659fds-*",
+        "arn:aws:s3:::cdk-hnb659fds-*/*"
+      ]
+    },
+    {
+      "Sid": "LambdaAppFunctionsAndLayers",
+      "Effect": "Allow",
+      "Action": "lambda:*",
+      "Resource": [
+        "arn:aws:lambda:*:*:function:KiroDash-*",
+        "arn:aws:lambda:*:*:layer:*"
+      ]
+    },
+    {
+      "Sid": "CognitoUserPools",
+      "Effect": "Allow",
+      "Action": "cognito-idp:*",
+      "Resource": "arn:aws:cognito-idp:*:*:userpool/*"
+    },
+    {
+      "Sid": "ApiGatewayHttpApis",
+      "Effect": "Allow",
+      "Action": "apigateway:*",
+      "Resource": [
+        "arn:aws:apigateway:*::/apis",
+        "arn:aws:apigateway:*::/apis/*",
+        "arn:aws:apigateway:*::/tags/*"
+      ]
+    },
+    {
+      "Sid": "CloudFrontDistributionResources",
+      "Effect": "Allow",
+      "Action": "cloudfront:*",
+      "Resource": [
+        "arn:aws:cloudfront::*:distribution/*",
+        "arn:aws:cloudfront::*:origin-access-control/*",
+        "arn:aws:cloudfront::*:response-headers-policy/*",
+        "arn:aws:cloudfront::*:cache-policy/*"
+      ]
+    },
+    {
+      "Sid": "EcrCdkAndAgentRepos",
+      "Effect": "Allow",
+      "Action": "ecr:*",
+      "Resource": [
+        "arn:aws:ecr:*:*:repository/cdk-hnb659fds-container-assets-*",
+        "arn:aws:ecr:*:*:repository/kiro-*"
+      ]
+    },
+    {
+      "Sid": "DynamoDbAppTables",
       "Effect": "Allow",
       "Action": [
-        "cloudformation:*",
-        "s3:*",
-        "lambda:*",
         "dynamodb:CreateTable",
         "dynamodb:DeleteTable",
         "dynamodb:DescribeTable",
@@ -18,7 +80,27 @@
         "dynamodb:UpdateTimeToLive",
         "dynamodb:TagResource",
         "dynamodb:UntagResource",
-        "dynamodb:ListTagsOfResource",
+        "dynamodb:ListTagsOfResource"
+      ],
+      "Resource": "arn:aws:dynamodb:*:*:table/KiroDash-*"
+    },
+    {
+      "Sid": "AthenaAppWorkgroup",
+      "Effect": "Allow",
+      "Action": [
+        "athena:CreateWorkGroup",
+        "athena:DeleteWorkGroup",
+        "athena:GetWorkGroup",
+        "athena:UpdateWorkGroup",
+        "athena:TagResource",
+        "athena:UntagResource"
+      ],
+      "Resource": "arn:aws:athena:*:*:workgroup/*-wg"
+    },
+    {
+      "Sid": "StarResourceServices",
+      "Effect": "Allow",
+      "Action": [
         "glue:CreateDatabase",
         "glue:DeleteDatabase",
         "glue:GetDatabase",
@@ -29,15 +111,6 @@
         "glue:GetTable",
         "glue:GetTables",
         "glue:UpdateTable",
-        "athena:CreateWorkGroup",
-        "athena:DeleteWorkGroup",
-        "athena:GetWorkGroup",
-        "athena:UpdateWorkGroup",
-        "athena:TagResource",
-        "athena:UntagResource",
-        "cognito-idp:*",
-        "apigateway:*",
-        "cloudfront:*",
         "secretsmanager:CreateSecret",
         "secretsmanager:DeleteSecret",
         "secretsmanager:DescribeSecret",
@@ -46,7 +119,6 @@
         "secretsmanager:UpdateSecret",
         "secretsmanager:TagResource",
         "secretsmanager:UntagResource",
-        "secretsmanager:GetRandomPassword",
         "events:PutRule",
         "events:DeleteRule",
         "events:DescribeRule",
@@ -64,12 +136,10 @@
         "logs:UntagResource",
         "logs:TagLogGroup",
         "logs:ListTagsForResource",
-        "ecr:*",
         "bedrock-agentcore:CreateAgentRuntime",
         "bedrock-agentcore:UpdateAgentRuntime",
         "bedrock-agentcore:DeleteAgentRuntime",
         "bedrock-agentcore:GetAgentRuntime",
-        "bedrock-agentcore:ListAgentRuntimes",
         "identitystore:ListGroups",
         "identitystore:ListUsers",
         "identitystore:ListGroupMemberships",
@@ -77,7 +147,24 @@
         "identitystore:DescribeGroup",
         "sso:ListApplicationAssignments",
         "sso:DescribeApplication",
-        "sso:ListInstances",
+        "sso:ListInstances"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AccountWideReadOnlyAndUnscopable",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:ValidateTemplate",
+        "cloudformation:GetTemplateSummary",
+        "cloudformation:ListStacks",
+        "s3:ListAllMyBuckets",
+        "cognito-idp:CreateUserPool",
+        "cognito-idp:ListUserPools",
+        "cognito-idp:DescribeUserPoolDomain",
+        "ecr:GetAuthorizationToken",
+        "secretsmanager:GetRandomPassword",
+        "bedrock-agentcore:ListAgentRuntimes",
         "sts:GetCallerIdentity"
       ],
       "Resource": "*"
@@ -108,13 +195,22 @@
         "iam:DeletePolicyVersion",
         "iam:ListPolicyVersions"
       ],
-      "Resource": "*"
+      "Resource": [
+        "arn:aws:iam::*:role/cdk-hnb659fds-*",
+        "arn:aws:iam::*:role/KiroDash-*",
+        "arn:aws:iam::*:role/KiroDashAgentRuntimeRole",
+        "arn:aws:iam::*:policy/KiroDash-*"
+      ]
     },
     {
       "Sid": "IamPassRoleScopedToServices",
       "Effect": "Allow",
       "Action": "iam:PassRole",
-      "Resource": "*",
+      "Resource": [
+        "arn:aws:iam::*:role/cdk-hnb659fds-*",
+        "arn:aws:iam::*:role/KiroDash-*",
+        "arn:aws:iam::*:role/KiroDashAgentRuntimeRole"
+      ],
       "Condition": {
         "StringEquals": {
           "iam:PassedToService": [

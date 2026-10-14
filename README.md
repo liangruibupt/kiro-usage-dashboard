@@ -71,9 +71,21 @@ AWS CLI profile `<PROFILE>`。
 及（可选）Agent 部署。仓库提供了一份现成的最小权限策略：`docs/least-privilege-deploy-policy.json`。
 
 > 这是一份**单份**客户托管策略（压缩后约 3.3KB，在 IAM 托管策略 6144 字节上限内）。它按服务收敛
-> 权限（不是 `*:*`）；对需要大量动作且资源名含随机后缀的服务（`cloudformation` / `s3` / `lambda`
-> / `cognito-idp` / `apigateway` / `cloudfront` / `ecr`）用服务级通配，其余服务给精确动作列表。
-> `iam:PassRole` 已用条件限定只能传给 lambda/events/cloudformation/bedrock-agentcore。
+> 权限（不是 `*:*`）；对需要大量动作的服务（`cloudformation` / `s3` / `lambda` / `cognito-idp` /
+> `apigateway` / `cloudfront` / `ecr`）用服务级通配，但资源限定到本应用的命名模式：栈
+> `KiroDash-*` 与 `CDKToolkit`、桶 `kirodash-*` 与 `cdk-hnb659fds-*`、函数 `KiroDash-*`、
+> DynamoDB 表 `KiroDash-*`、Athena workgroup `*-wg`、IAM 角色/策略 `KiroDash-*` / `cdk-hnb659fds-*`
+> / `KiroDashAgentRuntimeRole`、ECR 仓库 `cdk-hnb659fds-container-assets-*` 与 `kiro-*`。
+> `iam:PassRole` 限定到上述角色，并用条件限定只能传给 lambda/events/cloudformation/bedrock-agentcore。
+>
+> `AccountWideReadOnlyAndUnscopable` 语句保留 `"Resource": "*"`：these actions do not support
+> resource-level scoping; they are read/describe or create-time calls required by CDK bootstrap
+> （如 `cloudformation:ValidateTemplate`、`cognito-idp:CreateUserPool`、`ecr:GetAuthorizationToken`、
+> `sts:GetCallerIdentity`）。`StarResourceServices` 中的 glue / secretsmanager / events / logs /
+> bedrock-agentcore / identitystore / sso 精确动作列表仍为 `*`。IAM 策略不支持 `_comment` 之类的
+> 自定义字段（Access Analyzer 报 `INVALID_POLICY_ELEMENT`），故说明写在此处。
+>
+> 若部署 NL 问答 Agent，Agent 镜像的 ECR 仓库请以 `kiro-` 开头命名（如 `kiro-usage-agent`）。
 
 **使用步骤：**
 

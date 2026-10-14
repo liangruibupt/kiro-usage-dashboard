@@ -160,7 +160,7 @@ def test_normalize_tier_none_returns_none():
 def test_submit_missing_api_key_401(make_client):
     client, _ = make_client()
     r = client.post("/api/tier-requests",
-                    json={"requester_email": "u@x.com", "target_tier": "Pro"})
+                    json={"requester_email": "u@example.com", "target_tier": "Pro"})
     assert r.status_code == 401
 
 
@@ -168,7 +168,7 @@ def test_submit_wrong_api_key_401(make_client):
     client, _ = make_client()
     r = client.post("/api/tier-requests",
                     headers={"X-Api-Key": "wrong"},
-                    json={"requester_email": "u@x.com", "target_tier": "Pro"})
+                    json={"requester_email": "u@example.com", "target_tier": "Pro"})
     assert r.status_code == 401
 
 
@@ -176,7 +176,7 @@ def test_submit_correct_api_key_ok(make_client):
     client, table = make_client()
     r = client.post("/api/tier-requests",
                     headers={"X-Api-Key": API_KEY},
-                    json={"requester_email": "u@x.com", "target_tier": "pro+"})
+                    json={"requester_email": "u@example.com", "target_tier": "pro+"})
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True and body["status"] == "pending"
@@ -197,7 +197,7 @@ def test_submit_invalid_tier_400(make_client):
     client, _ = make_client()
     r = client.post("/api/tier-requests",
                     headers={"X-Api-Key": API_KEY},
-                    json={"requester_email": "u@x.com", "target_tier": "gold"})
+                    json={"requester_email": "u@example.com", "target_tier": "gold"})
     assert r.status_code == 400
 
 
@@ -206,13 +206,13 @@ def test_submit_invalid_tier_400(make_client):
 # =============================================================================
 def test_submit_supersedes_existing_pending(make_client):
     existing = [{
-        "id": "old-1", "requester_email": "u@x.com", "target_tier": "Pro",
+        "id": "old-1", "requester_email": "u@example.com", "target_tier": "Pro",
         "status": "pending", "created_at": "2026-09-01T00:00:00+00:00",
     }]
     client, table = make_client(existing)
     r = client.post("/api/tier-requests",
                     headers={"X-Api-Key": API_KEY},
-                    json={"requester_email": "u@x.com", "target_tier": "ProMax"})
+                    json={"requester_email": "u@example.com", "target_tier": "ProMax"})
     assert r.status_code == 200
     body = r.json()
     assert body["superseded"] >= 1
@@ -222,7 +222,7 @@ def test_submit_supersedes_existing_pending(make_client):
 
     # 该 email 至多一条 pending（即新提交的那条）。
     pending = [it for it in table.items.values()
-               if it["requester_email"] == "u@x.com" and it["status"] == "pending"]
+               if it["requester_email"] == "u@example.com" and it["status"] == "pending"]
     assert len(pending) == 1
     assert pending[0]["target_tier"] == "ProMax"
     assert pending[0]["id"] == body["id"]
@@ -232,7 +232,7 @@ def test_submit_no_existing_pending_superseded_zero(make_client):
     client, table = make_client()
     r = client.post("/api/tier-requests",
                     headers={"X-Api-Key": API_KEY},
-                    json={"requester_email": "fresh@x.com", "target_tier": "Pro"})
+                    json={"requester_email": "fresh@example.com", "target_tier": "Pro"})
     assert r.status_code == 200
     assert r.json()["superseded"] == 0
     pending = [it for it in table.items.values() if it["status"] == "pending"]
@@ -245,7 +245,7 @@ def test_submit_no_existing_pending_superseded_zero(make_client):
 @pytest.mark.parametrize("outcome", ["completed", "rejected"])
 def test_close_writes_fields_and_sends_one_email(make_client, fake_ses, outcome):
     seed = [{
-        "id": "req-1", "requester_email": "u@x.com", "target_tier": "ProMax",
+        "id": "req-1", "requester_email": "u@example.com", "target_tier": "ProMax",
         "status": "pending", "created_at": "2026-09-01T00:00:00+00:00",
     }]
     client, table = make_client(seed)
@@ -266,12 +266,12 @@ def test_close_writes_fields_and_sends_one_email(make_client, fake_ses, outcome)
     assert len(fake_ses.calls) == 1
     call = fake_ses.calls[0]
     assert call["Source"] == SENDER
-    assert call["Destination"]["ToAddresses"] == ["u@x.com"]
+    assert call["Destination"]["ToAddresses"] == ["u@example.com"]
 
 
 def test_close_without_admin_note_still_sends_one_email(make_client, fake_ses):
     seed = [{
-        "id": "req-2", "requester_email": "v@x.com", "target_tier": "Pro",
+        "id": "req-2", "requester_email": "v@example.com", "target_tier": "Pro",
         "status": "pending", "created_at": "2026-09-01T00:00:00+00:00",
     }]
     client, table = make_client(seed)
@@ -285,7 +285,7 @@ def test_close_without_admin_note_still_sends_one_email(make_client, fake_ses):
 
 def test_close_invalid_outcome_400(make_client, fake_ses):
     seed = [{
-        "id": "req-3", "requester_email": "u@x.com", "target_tier": "Pro",
+        "id": "req-3", "requester_email": "u@example.com", "target_tier": "Pro",
         "status": "pending", "created_at": "2026-09-01T00:00:00+00:00",
     }]
     client, table = make_client(seed)
@@ -307,15 +307,15 @@ def test_close_nonexistent_id_404(make_client, fake_ses):
 # =============================================================================
 def test_list_sorted_pending_first_then_created_desc(make_client):
     seed = [
-        {"id": "a", "requester_email": "a@x.com", "target_tier": "Pro",
+        {"id": "a", "requester_email": "a@example.com", "target_tier": "Pro",
          "status": "completed", "created_at": "2026-09-05T00:00:00+00:00"},
-        {"id": "b", "requester_email": "b@x.com", "target_tier": "Pro",
+        {"id": "b", "requester_email": "b@example.com", "target_tier": "Pro",
          "status": "pending", "created_at": "2026-09-02T00:00:00+00:00"},
-        {"id": "c", "requester_email": "c@x.com", "target_tier": "Pro",
+        {"id": "c", "requester_email": "c@example.com", "target_tier": "Pro",
          "status": "pending", "created_at": "2026-09-04T00:00:00+00:00"},
-        {"id": "d", "requester_email": "d@x.com", "target_tier": "Pro",
+        {"id": "d", "requester_email": "d@example.com", "target_tier": "Pro",
          "status": "superseded", "created_at": "2026-09-03T00:00:00+00:00"},
-        {"id": "e", "requester_email": "e@x.com", "target_tier": "Pro",
+        {"id": "e", "requester_email": "e@example.com", "target_tier": "Pro",
          "status": "rejected", "created_at": "2026-09-06T00:00:00+00:00"},
     ]
     client, _ = make_client(seed)
