@@ -9,7 +9,7 @@ description = "Kiro tier-request MCP server (stdio) — exposes request_tier_cha
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "mcp>=1.2.0",
+    "mcp==1.30.0",
 ]
 
 [project.scripts]
