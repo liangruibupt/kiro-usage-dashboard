@@ -86,6 +86,13 @@ AWS CLI profile `<PROFILE>`。
 > 自定义字段（Access Analyzer 报 `INVALID_POLICY_ELEMENT`），故说明写在此处。
 >
 > 若部署 NL 问答 Agent，Agent 镜像的 ECR 仓库请以 `kiro-` 开头命名（如 `kiro-usage-agent`）。
+>
+> **关于通配符的说明：** `docs/least-privilege-deploy-policy.json` 是一份部署期的管理性 bootstrap 策略，
+> 仅供执行 `cdk deploy` 的身份使用。其中若干服务级通配动作（`cloudformation` / `s3` / `lambda` /
+> `cognito-idp` / `apigateway` / `cloudfront` / `ecr`）以及部分 create/delete 动作是有意放宽的：
+> 具体资源 ARN 要等 CDK 在同一次部署中创建后才存在，无法事先写死。用于生产前，请按你的部署实际需要
+> 收敛到具体动作与资源 ARN（参见 AWS CDK 关于 bootstrap 最小权限的官方指引）。CDK 栈创建的运行时
+> Lambda / 角色策略本身已按资源收敛。
 
 **使用步骤：**
 

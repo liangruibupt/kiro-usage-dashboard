@@ -101,7 +101,7 @@ pip install -r requirements.txt
 
 ```bash
 # 确保 mcp 包可用，并将包所在目录加入 PYTHONPATH
-pip install "mcp>=1.2.0"
+pip install "mcp==1.30.0"
 python -m tier_request_server.server
 ```
 
