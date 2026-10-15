@@ -26,6 +26,12 @@ export function Chart({
   );
 }
 
+/**
+ * HTML 转义：ECharts 回调式 tooltip formatter 返回的是 HTML 字符串，
+ * 插值前必须转义（用户名/部门等来自 Identity Center，不可信）。
+ */
+export const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 export const axisStyle = {
   axisLine: { lineStyle: { color: "#334155" } },
   splitLine: { lineStyle: { color: "#1e2a44" } },

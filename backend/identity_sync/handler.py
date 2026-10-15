@@ -19,11 +19,14 @@ DynamoDB item:
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 
 import boto3
 from botocore.exceptions import ParamValidationError
+
+log = logging.getLogger("identity_sync")
 
 s3 = boto3.client("s3")
 ddb = boto3.resource("dynamodb")
@@ -302,7 +305,7 @@ def _load_from_group_csv() -> dict[str, dict]:
             if zh:
                 info["display_name"] = zh
     except Exception:  # noqa: BLE001 —— IdC 不可用时保留 CSV 回退值
-        pass
+        log.warning("Identity Center lookup failed; keeping CSV fallback values", exc_info=True)
     return result
 
 

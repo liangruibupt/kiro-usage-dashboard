@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import time
 
 import boto3
@@ -46,6 +47,26 @@ def bedrock_model_arns(model_id: str, account: str, region: str) -> list[str]:
     return [f"arn:aws:bedrock:{region}::foundation-model/{model_id}"]
 
 
+# ECR 镜像 URI：<account>.dkr.ecr.<region>.amazonaws.com/<repo>[:<tag> | @sha256:<digest>]
+_ECR_IMAGE_RE = re.compile(
+    r"^(?P<account>\d{12})\.dkr\.ecr\.(?P<region>[a-z0-9-]+)\.amazonaws\.com/"
+    r"(?P<repo>[a-z0-9][a-z0-9._/-]*?)"
+    r"(?::(?P<tag>[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})|@sha256:(?P<digest>[0-9a-f]{64}))?$")
+
+
+def parse_ecr_image(image: str) -> tuple[str, str, str]:
+    """把 --image 解析为 (repo_account, repo_region, repo_name)；非 ECR 私有仓库 URI 抛 ValueError。
+
+    AgentCore Runtime 只接受 ECR 镜像，故这里要求 ECR 格式，以便把拉取权限收敛到该仓库。
+    """
+    m = _ECR_IMAGE_RE.match((image or "").strip())
+    if not m:
+        raise ValueError(
+            f"--image 不是 ECR 镜像 URI：{image!r}；期望 "
+            "<account>.dkr.ecr.<region>.amazonaws.com/<repo>:<tag>（或 @sha256:<digest>）")
+    return m.group("account"), m.group("region"), m.group("repo")
+
+
 def resolve_data_resources(sess, stack: str = DATA_STACK) -> dict:
     """从 DataStack 输出 + Athena workgroup 配置解析 workgroup / curated 桶 / 查询结果桶。"""
     outs = sess.client("cloudformation").describe_stacks(StackName=stack)["Stacks"][0].get("Outputs", [])
@@ -59,8 +80,12 @@ def resolve_data_resources(sess, stack: str = DATA_STACK) -> dict:
 
 
 def build_policy(account: str, region: str, model_id: str, workgroup: str,
-                 curated_bucket: str, results_bucket: str) -> dict:
-    """Agent Runtime 执行角色的内联策略（按实际使用的资源收敛）。"""
+                 curated_bucket: str, results_bucket: str, image: str) -> dict:
+    """Agent Runtime 执行角色的内联策略（按实际使用的资源收敛）。
+
+    image：Agent 容器镜像 ECR URI，镜像拉取权限只授予该仓库。
+    """
+    repo_account, repo_region, repo_name = parse_ecr_image(image)
     return {
         "Version": "2012-10-17",
         "Statement": [
@@ -85,11 +110,14 @@ def build_policy(account: str, region: str, model_id: str, workgroup: str,
             {"Sid": "Logs", "Effect": "Allow",
              "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
              "Resource": f"arn:aws:logs:{region}:{account}:log-group:/aws/bedrock-agentcore/*"},
-            # 有意保留 "*"：ecr:GetAuthorizationToken 不支持资源级权限；镜像仓库由 --image 指定。
-            {"Sid": "ECR", "Effect": "Allow",
-             "Action": ["ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage",
-                        "ecr:GetAuthorizationToken"],
+            # 有意保留 "*"：ecr:GetAuthorizationToken 不支持资源级权限。
+            {"Sid": "EcrAuth", "Effect": "Allow",
+             "Action": ["ecr:GetAuthorizationToken"],
              "Resource": "*"},
+            # 镜像拉取只授予 --image 指定的仓库。
+            {"Sid": "EcrPullAgentImage", "Effect": "Allow",
+             "Action": ["ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage"],
+             "Resource": f"arn:aws:ecr:{repo_region}:{repo_account}:repository/{repo_name}"},
         ],
     }
 
@@ -135,6 +163,7 @@ def find_runtime(ctrl, name: str):
 
 def deploy(image: str, user_pool_id: str, client_id: str, region: str,
            name: str = "kiro_usage_agent") -> str:
+    parse_ecr_image(image)  # 先校验镜像 URI，失败时不触碰任何 AWS 资源
     sess = boto3.Session(region_name=region)
     account = sess.client("sts").get_caller_identity()["Account"]
     iam = sess.client("iam")
@@ -143,7 +172,7 @@ def deploy(image: str, user_pool_id: str, client_id: str, region: str,
     model_id = os.environ.get("AGENT_MODEL_ID", DEFAULT_MODEL_ID)
     data = resolve_data_resources(sess)
     policy = build_policy(account, region, model_id, data["workgroup"],
-                          data["curated_bucket"], data["results_bucket"])
+                          data["curated_bucket"], data["results_bucket"], image)
     role_arn = ensure_role(iam, account, region, policy)
     # IAM 传播
     time.sleep(8)
@@ -197,5 +226,9 @@ if __name__ == "__main__":
     p.add_argument("--region", default="us-west-2")
     p.add_argument("--name", default="kiro_usage_agent")
     a = p.parse_args()
+    try:
+        parse_ecr_image(a.image)
+    except ValueError as e:
+        p.error(str(e))
     arn = deploy(a.image, a.user_pool_id, a.client_id, a.region, a.name)
     print(arn)

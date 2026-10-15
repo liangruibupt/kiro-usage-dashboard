@@ -130,17 +130,24 @@ def _build_html(period_label: str, date_range: tuple, kpis: dict, tiers: dict,
 """
 
 
+def _csv_safe(v):
+    """CSV 公式注入防护：以 = + - @ \\t \\r 开头的字符串前置单引号，Excel 不再当公式求值。"""
+    s = "" if v is None else str(v)
+    return "'" + s if s[:1] in ("=", "+", "-", "@", "\t", "\r") else s
+
+
 def _build_csv(upgrades: list[dict], downgrades: list[dict]) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["建议类型", "姓名", "邮箱", "部门", "当前档位", "累计Credits", "套餐额度", "使用率", "建议档位"])
     for kind, items in [("升档", upgrades), ("降档", downgrades)]:
         for u in items:
+            # 字符串单元格过 _csv_safe（姓名/部门来自 Identity Center）；数值列原样。
             w.writerow([
-                kind, u.get("display_name") or "", u.get("email") or "",
-                u.get("department") or "", tier_label(u.get("subscription_tier") or ""),
+                kind, _csv_safe(u.get("display_name")), _csv_safe(u.get("email")),
+                _csv_safe(u.get("department")), _csv_safe(tier_label(u.get("subscription_tier") or "")),
                 u.get("credits_used"), u.get("usage_limit"),
-                _pct(u.get("usage_rate")), tier_label(u.get("suggested_tier") or ""),
+                _pct(u.get("usage_rate")), _csv_safe(tier_label(u.get("suggested_tier") or "")),
             ])
     return buf.getvalue()
 

@@ -55,7 +55,7 @@
 AWS CLI profile `<PROFILE>`。
 
 ### 1. 前置条件
-- **Node.js ≥ 18** 与 **AWS CDK CLI**（`npm install -g aws-cdk` 或用 `npx cdk`）
+- **Node.js ≥ 18** 与 **AWS CDK CLI**（`npm install -g aws-cdk@2.1142.0` 或用 `npx aws-cdk@2.1142.0`）
 - **Python 3.12**
 - **AWS CLI v2**，并配置目标账户凭证：
   ```bash
@@ -70,7 +70,7 @@ AWS CLI profile `<PROFILE>`。
 部署用的 IAM 身份（**用户或角色均可，名字任意**）需要一组权限来跑 `cdk bootstrap` / `cdk deploy`
 及（可选）Agent 部署。仓库提供了一份现成的最小权限策略：`docs/least-privilege-deploy-policy.json`。
 
-> 这是一份**单份**客户托管策略（压缩后约 3.3KB，在 IAM 托管策略 6144 字节上限内）。它按服务收敛
+> 这是一份**单份**客户托管策略（压缩后约 5.9KB，在 IAM 托管策略 6144 字符上限内）。它按服务收敛
 > 权限（不是 `*:*`）；对需要大量动作的服务（`cloudformation` / `s3` / `lambda` / `cognito-idp` /
 > `apigateway` / `cloudfront` / `ecr`）用服务级通配，但资源限定到本应用的命名模式：栈
 > `KiroDash-*` 与 `CDKToolkit`、桶 `kirodash-*` 与 `cdk-hnb659fds-*`、函数 `KiroDash-*`、
@@ -81,9 +81,12 @@ AWS CLI profile `<PROFILE>`。
 > `AccountWideReadOnlyAndUnscopable` 语句保留 `"Resource": "*"`：these actions do not support
 > resource-level scoping; they are read/describe or create-time calls required by CDK bootstrap
 > （如 `cloudformation:ValidateTemplate`、`cognito-idp:CreateUserPool`、`ecr:GetAuthorizationToken`、
-> `sts:GetCallerIdentity`）。`StarResourceServices` 中的 glue / secretsmanager / events / logs /
-> bedrock-agentcore / identitystore / sso 精确动作列表仍为 `*`。IAM 策略不支持 `_comment` 之类的
-> 自定义字段（Access Analyzer 报 `INVALID_POLICY_ELEMENT`），故说明写在此处。
+> `logs:DescribeLogGroups`、`sts:GetCallerIdentity`）。除此之外仅 `IdentityCenterReadOnly`
+> （identitystore / sso 只读 List/Describe）保留 `*`；glue / secretsmanager / events / logs /
+> bedrock-agentcore 的写/删动作已分别限定到库 `kiro_usage`、密钥 `kiro-dashboard/*`、规则 `KiroDash-*`、
+> 日志组 `/aws/lambda/KiroDash-*` / `KiroDash-*`、AgentCore `runtime/*`。IAM 策略不支持 `_comment` 之类的
+> 自定义字段（Access Analyzer 报 `INVALID_POLICY_ELEMENT`），各语句的设计取舍见
+> [`docs/least-privilege-deploy-policy.md`](docs/least-privilege-deploy-policy.md)。
 >
 > 若部署 NL 问答 Agent，Agent 镜像的 ECR 仓库请以 `kiro-` 开头命名（如 `kiro-usage-agent`）。
 >
@@ -91,7 +94,8 @@ AWS CLI profile `<PROFILE>`。
 > 仅供执行 `cdk deploy` 的身份使用。其中若干服务级通配动作（`cloudformation` / `s3` / `lambda` /
 > `cognito-idp` / `apigateway` / `cloudfront` / `ecr`）以及部分 create/delete 动作是有意放宽的：
 > 具体资源 ARN 要等 CDK 在同一次部署中创建后才存在，无法事先写死。用于生产前，请按你的部署实际需要
-> 收敛到具体动作与资源 ARN（参见 AWS CDK 关于 bootstrap 最小权限的官方指引）。CDK 栈创建的运行时
+> 收敛到具体动作与资源 ARN（做法与 AWS CDK 官方指引链接见
+> [`docs/least-privilege-deploy-policy.md`](docs/least-privilege-deploy-policy.md)）。CDK 栈创建的运行时
 > Lambda / 角色策略本身已按资源收敛。
 
 **使用步骤：**
@@ -128,7 +132,7 @@ cd kiro-dashboard-on-agentcore
 python3.12 -m venv .venv
 .venv/bin/pip install -r infra/requirements.txt
 # 可选（本地跑后端单测）：
-.venv/bin/pip install pytest boto3 pandas pyarrow fastapi mangum
+.venv/bin/pip install -r backend/requirements-dev.txt
 ```
 > CDK app 用 `.venv` 里的 Python 执行，后续命令带 `--app "../.venv/bin/python app.py"`。
 
@@ -149,6 +153,7 @@ python3.12 -m venv .venv
 | `sesSender` | **已在 SES 验证**的发件邮箱（月度报告 / 调档回执邮件用） |
 | `reportRecipients` | （可选）额外报告收件人，逗号分隔；与 admins 组取并集 |
 | `agentRuntimeArn` | NL 问答 Agent 的 Runtime ARN；先留空，部署 Agent 后回填 |
+| `corsOrigins` | API 允许的跨域来源（逗号分隔或列表），同时用于 API Gateway CORS 与 FastAPI `CORS_ORIGINS`。未设置时为 `*`；**真实部署请设为 CloudFront 站点 URL**（如 `https://dxxxx.cloudfront.net`） |
 
 > `infra/cdk.json` 与 `frontend/public/config.json` 仓库内为**占位符模板**；填入你账户的真实值后
 > **请勿提交这些本地改动**（可用 `git update-index --skip-worktree infra/cdk.json`）。
@@ -291,6 +296,20 @@ aws ses verify-email-identity --email-address <sesSender> --profile <PROFILE> --
 ```
 SES 新账户默认处于**沙箱模式**，只能发给已验证的收件人；要发给任意地址需在 SES 控制台申请
 生产访问（Production access）。沙箱期间不影响申请提交/审批流程，仅影响邮件触达。
+
+---
+
+## 八、个人数据与合规
+
+本方案会处理员工个人数据：来自 IAM Identity Center 的邮箱、显示名、部门，以及 Kiro 使用活动
+（每日用量、模型、credits 等）。这些数据存放在**部署者自己的 AWS 账户**内（S3 / Athena /
+DynamoDB）；NL 问答经本账户的 Amazon Bedrock 处理，月度报告 / 调档回执经 Amazon SES 发给管理员
+及你配置的收件人（邮件正文与 CSV 附件含上述字段）。
+
+部署者（数据控制者）需自行负责适用的数据保护义务（如 GDPR 及当地隐私法规）、遵循企业内部隐私政策，
+并决定数据保留期限（S3 生命周期 / DynamoDB 清理）与访问控制（看板 `admins` 组成员、IAM 权限）。
+AWS 负责云本身的安全，云中数据与配置的安全由客户负责，详见
+[AWS 责任共担模型](https://aws.amazon.com/compliance/shared-responsibility-model/)。
 
 ---
 

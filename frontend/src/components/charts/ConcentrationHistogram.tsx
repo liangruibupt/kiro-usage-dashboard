@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import type { EChartsOption } from "echarts";
-import { Chart, axisStyle } from "./Chart";
+import { Chart, axisStyle, esc } from "./Chart";
 import type { ConcentrationBucket } from "../../api/types";
 import { useI18n } from "../../i18n";
 
@@ -52,7 +52,7 @@ export function ConcentrationHistogram({
       axisPointer: { type: "shadow" },
       formatter: (p: any) => {
         const i = p[0].dataIndex;
-        return `${labels[i]}<br/>${t("conc.hist.users")}: <b>${buckets[i].count}</b>`;
+        return `${esc(labels[i])}<br/>${esc(t("conc.hist.users"))}: <b>${esc(buckets[i].count)}</b>`;
       },
     },
     grid: { left: 48, right: 24, top: 16, bottom: 56 },

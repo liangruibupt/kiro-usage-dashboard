@@ -17,3 +17,4 @@ kiro-tier-request = "tier_request_server.server:mcp.run"
 
 [tool.setuptools]
 packages = ["tier_request_server"]
+package-dir = {"tier_request_server" = "."}

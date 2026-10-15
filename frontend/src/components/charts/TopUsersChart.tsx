@@ -1,6 +1,6 @@
 import type { EChartsOption } from "echarts";
 import { Card } from "antd";
-import { Chart, axisStyle } from "./Chart";
+import { Chart, axisStyle, esc } from "./Chart";
 import type { TopUser } from "../../api/types";
 import { useI18n, tierLabel } from "../../i18n";
 
@@ -16,7 +16,7 @@ export function TopUsersChart({ users }: { users: TopUser[] }) {
       formatter: (p: any) => {
         const i = p[0].dataIndex;
         const u = rows[i];
-        return `${u.display_name || u.email}<br/>${u.department} · ${tierLabel(u.subscription_tier)}<br/>Credits: <b>${u.credits_used}</b>`;
+        return `${esc(u.display_name || u.email)}<br/>${esc(u.department)} · ${esc(tierLabel(u.subscription_tier))}<br/>Credits: <b>${esc(u.credits_used)}</b>`;
       },
     },
     grid: { left: 90, right: 40, top: 12, bottom: 24 },

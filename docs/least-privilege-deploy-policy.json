@@ -98,7 +98,7 @@
       "Resource": "arn:aws:athena:*:*:workgroup/*-wg"
     },
     {
-      "Sid": "StarResourceServices",
+      "Sid": "GlueAppCatalog",
       "Effect": "Allow",
       "Action": [
         "glue:CreateDatabase",
@@ -110,7 +110,18 @@
         "glue:DeleteTable",
         "glue:GetTable",
         "glue:GetTables",
-        "glue:UpdateTable",
+        "glue:UpdateTable"
+      ],
+      "Resource": [
+        "arn:aws:glue:*:*:catalog",
+        "arn:aws:glue:*:*:database/kiro_usage",
+        "arn:aws:glue:*:*:table/kiro_usage/*"
+      ]
+    },
+    {
+      "Sid": "SecretsManagerAppSecrets",
+      "Effect": "Allow",
+      "Action": [
         "secretsmanager:CreateSecret",
         "secretsmanager:DeleteSecret",
         "secretsmanager:DescribeSecret",
@@ -118,7 +129,14 @@
         "secretsmanager:PutSecretValue",
         "secretsmanager:UpdateSecret",
         "secretsmanager:TagResource",
-        "secretsmanager:UntagResource",
+        "secretsmanager:UntagResource"
+      ],
+      "Resource": "arn:aws:secretsmanager:*:*:secret:kiro-dashboard/*"
+    },
+    {
+      "Sid": "EventBridgeAppRules",
+      "Effect": "Allow",
+      "Action": [
         "events:PutRule",
         "events:DeleteRule",
         "events:DescribeRule",
@@ -126,20 +144,43 @@
         "events:RemoveTargets",
         "events:ListTargetsByRule",
         "events:TagResource",
-        "events:UntagResource",
+        "events:UntagResource"
+      ],
+      "Resource": "arn:aws:events:*:*:rule/KiroDash-*"
+    },
+    {
+      "Sid": "LogsAppLogGroups",
+      "Effect": "Allow",
+      "Action": [
         "logs:CreateLogGroup",
         "logs:DeleteLogGroup",
-        "logs:DescribeLogGroups",
         "logs:PutRetentionPolicy",
         "logs:DeleteRetentionPolicy",
         "logs:TagResource",
         "logs:UntagResource",
         "logs:TagLogGroup",
-        "logs:ListTagsForResource",
+        "logs:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:logs:*:*:log-group:/aws/lambda/KiroDash-*",
+        "arn:aws:logs:*:*:log-group:KiroDash-*"
+      ]
+    },
+    {
+      "Sid": "AgentCoreAppRuntime",
+      "Effect": "Allow",
+      "Action": [
         "bedrock-agentcore:CreateAgentRuntime",
         "bedrock-agentcore:UpdateAgentRuntime",
         "bedrock-agentcore:DeleteAgentRuntime",
-        "bedrock-agentcore:GetAgentRuntime",
+        "bedrock-agentcore:GetAgentRuntime"
+      ],
+      "Resource": "arn:aws:bedrock-agentcore:*:*:runtime/*"
+    },
+    {
+      "Sid": "IdentityCenterReadOnly",
+      "Effect": "Allow",
+      "Action": [
         "identitystore:ListGroups",
         "identitystore:ListUsers",
         "identitystore:ListGroupMemberships",
@@ -163,6 +204,7 @@
         "cognito-idp:ListUserPools",
         "cognito-idp:DescribeUserPoolDomain",
         "ecr:GetAuthorizationToken",
+        "logs:DescribeLogGroups",
         "secretsmanager:GetRandomPassword",
         "bedrock-agentcore:ListAgentRuntimes",
         "sts:GetCallerIdentity"

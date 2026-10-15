@@ -23,16 +23,15 @@ BUILD = os.path.join(HERE, "build")
 BACKEND = os.path.abspath(os.path.join(HERE, "..", "backend"))
 
 API_DEPS = [
-    "fastapi==0.115.0",
+    "fastapi==0.116.1",
     "mangum==0.17.0",
     "pydantic==2.9.2",
     "pydantic-core==2.23.4",
-    "starlette==0.38.6",
-    "anyio==4.6.0",
-    "sniffio==1.3.1",
-    "idna==3.10",
-    "typing_extensions==4.12.2",
-    "annotated-types==0.7.0",
+    "starlette==0.47.2",
+    "anyio==4.15.1",
+    "idna==3.20",
+    "typing_extensions==4.16.0",
+    "annotated-types==0.8.0",
 ]
 
 
@@ -52,7 +51,7 @@ def _build_deps_layer(deps_dir: str) -> None:
     py_dir = os.path.join(deps_dir, "python")
     stamp = os.path.join(deps_dir, ".sig")
     sig = _sig(API_DEPS)
-    if os.path.isfile(stamp) and open(stamp).read().strip() == sig and os.path.isdir(py_dir):
+    if os.path.isfile(stamp) and open(stamp, encoding="utf-8").read().strip() == sig and os.path.isdir(py_dir):
         return  # 已构建且依赖未变
     if os.path.isdir(deps_dir):
         shutil.rmtree(deps_dir)
@@ -65,7 +64,7 @@ def _build_deps_layer(deps_dir: str) -> None:
     ]
     subprocess.check_call(cmd)
     _trim(py_dir)
-    with open(stamp, "w") as f:
+    with open(stamp, "w", encoding="utf-8") as f:
         f.write(sig)
 
 
@@ -79,7 +78,7 @@ def _assemble_app(app_dir: str) -> None:
     # shared 作为子包保留（athena_client 里 `from shared.athena_client` 回退）
     shared_dst = os.path.join(app_dir, "shared")
     os.makedirs(shared_dst, exist_ok=True)
-    open(os.path.join(shared_dst, "__init__.py"), "w").close()
+    open(os.path.join(shared_dst, "__init__.py"), "w", encoding="utf-8").close()
     for fn in ["athena_client.py", "derivations.py", "recommendations.py"]:
         shutil.copy2(os.path.join(BACKEND, "shared", fn), shared_dst)
 

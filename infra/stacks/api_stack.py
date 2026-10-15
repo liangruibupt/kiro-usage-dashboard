@@ -72,6 +72,9 @@ class ApiStack(Stack):
                 # 共享 API key：部署期从 Secrets Manager 解析其值并作为 env 注入；
                 # 运行时不再调用 Secrets Manager（简化冷启动，密钥轮换 = 重部署）。
                 "TIER_API_KEY": data_stack.tier_api_secret.secret_value.unsafe_unwrap(),
+                # FastAPI CORSMiddleware 与下方 HTTP API CORS 用同一 corsOrigins（逗号分隔）；
+                # 未配置时回退 "*"。真实部署应把 corsOrigins 设为 CloudFront 站点 URL。
+                "CORS_ORIGINS": ",".join(_as_list(cfg.get("corsOrigins")) or ["*"]),
             },
         )
 

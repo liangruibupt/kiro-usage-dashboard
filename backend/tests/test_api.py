@@ -290,6 +290,35 @@ def test_users_export_csv(client):
     assert "u1@example.com" in text and "u2@example.com" in text
 
 
+def test_users_export_csv_neutralizes_formula_injection():
+    """姓名/部门以 = + - @ 开头时前置单引号（CSV 公式注入防护）；数值列不变。"""
+    import csv
+    import io
+
+    class EvilLayer(MockLayer):
+        def run(self, spec):
+            rows = super().run(spec)
+            if "GROUP BY email" in spec.sql:
+                rows = [dict(r) for r in rows]
+                rows[0]["display_name"] = '=HYPERLINK("http://evil.example","x")'
+                rows[0]["department"] = "@SUM(1+1)"
+            return rows
+
+    app.dependency_overrides[get_query_layer] = lambda: EvilLayer()
+    try:
+        r = TestClient(app).get("/api/users/export")
+    finally:
+        app.dependency_overrides.clear()
+    assert r.status_code == 200
+    rows = list(csv.reader(io.StringIO(r.content.decode("utf-8-sig"))))
+    evil = next(row for row in rows[1:] if row[0] == "u1@example.com")
+    assert evil[1] == '\'=HYPERLINK("http://evil.example","x")'
+    assert evil[2] == "'@SUM(1+1)"
+    assert evil[4] == "250.8"  # 数值列原样
+    other = next(row for row in rows[1:] if row[0] == "u2@example.com")
+    assert other[1] == "张三"  # 普通值不变
+
+
 def test_users_export_filename_has_dept_and_range(client):
     import urllib.parse
 

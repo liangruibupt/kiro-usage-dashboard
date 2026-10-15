@@ -63,10 +63,12 @@ except ImportError:  # Lambda 平铺打包
     from model_multipliers import router as model_multipliers_router  # type: ignore
 app.include_router(model_multipliers_router)
 
-# CORS：具体 origin 由 CloudFront 域注入；开发放宽
+# CORS：与 API Gateway CORS 同源配置——infra 把 cdk context `corsOrigins` 以逗号分隔
+# 注入 CORS_ORIGINS；未配置时回退 "*"（与网关侧默认一致）。真实部署应把 corsOrigins
+# 设为 CloudFront 站点 URL。
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
     # 让浏览器能读到 CSV 导出的文件名（跨域下非安全列表头默认不暴露）。
@@ -486,6 +488,12 @@ def users(
     }
 
 
+def _csv_safe(v):
+    """CSV 公式注入防护：以 = + - @ \\t \\r 开头的字符串前置单引号，Excel 不再当公式求值。"""
+    s = "" if v is None else str(v)
+    return "'" + s if s[:1] in ("=", "+", "-", "@", "\t", "\r") else s
+
+
 @app.get("/api/users/export")
 def users_export(
     department: Optional[str] = Query(None),
@@ -520,11 +528,12 @@ def users_export(
     w = csv.writer(buf)
     w.writerow(headers)
     for r in ordered:
+        # 字符串单元格过 _csv_safe（姓名/部门来自 Identity Center，防 CSV 公式注入）；数值列原样。
         w.writerow([
-            r.get("email") or "",
-            r.get("display_name") or "",
-            r.get("department") or "",
-            r.get("subscription_tier") or "-",
+            _csv_safe(r.get("email")),
+            _csv_safe(r.get("display_name")),
+            _csv_safe(r.get("department")),
+            _csv_safe(r.get("subscription_tier")) or "-",
             r.get("credits_used") or 0,
             r.get("usage_limit") or 0,
             r.get("balance") or 0,
@@ -533,7 +542,7 @@ def users_export(
             r.get("est_cost") or 0,
             int(r.get("total_messages") or 0),
             int(r.get("active_days") or 0),
-            status_cn.get(r.get("status") or "", r.get("status") or ""),
+            _csv_safe(status_cn.get(r.get("status") or "", r.get("status") or "")),
         ])
 
     dept_part = (department or "全部").replace("/", "_").replace("\\", "_")

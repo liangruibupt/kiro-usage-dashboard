@@ -618,8 +618,9 @@ def make_athena_runner(*, database: str, workgroup: str, region: str,
                 WorkGroup=workgroup,
             )["QueryExecutionId"]
         except Exception:
-            log.exception("start_query_execution failed; wg=%s db=%s sql=%s",
-                          workgroup, database, sql[:200])
+            # 不记录 SQL 文本：查询里以字面量嵌入了用户邮箱等个人信息，只记长度。
+            log.exception("start_query_execution failed; wg=%s db=%s sql_len=%d",
+                          workgroup, database, len(sql))
             raise
 
         deadline = time.time() + timeout

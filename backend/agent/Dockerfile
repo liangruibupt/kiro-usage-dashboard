@@ -19,4 +19,9 @@ COPY backend/shared/athena_client.py backend/shared/derivations.py /app/
 # AgentCore Runtime 约定端口
 EXPOSE 8080
 
+# 以非 root 用户运行（应用只读 /app，运行期仅写 /tmp 与 $HOME）
+RUN useradd --create-home --uid 10001 app && chown -R app /app
+USER app
+# /ping 为 AgentCore Runtime 健康检查约定端点（BedrockAgentCoreApp 内置）
+HEALTHCHECK --interval=30s --timeout=5s CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/ping', timeout=3).status==200 else 1)"
 CMD ["python", "app.py"]
