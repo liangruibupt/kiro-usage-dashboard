@@ -23,15 +23,18 @@ BUILD = os.path.join(HERE, "build")
 BACKEND = os.path.abspath(os.path.join(HERE, "..", "backend"))
 
 API_DEPS = [
-    "fastapi==0.116.1",
+    "fastapi==0.143.2",
+    "starlette==1.8.0",
     "mangum==0.17.0",
     "pydantic==2.9.2",
     "pydantic-core==2.23.4",
-    "starlette==0.47.2",
     "anyio==4.15.1",
     "idna==3.20",
     "typing_extensions==4.16.0",
     "annotated-types==0.8.0",
+    "annotated-doc==0.0.5",
+    "typing-inspection==0.4.4",
+    "opentelemetry-api==1.45.1",
 ]
 
 
@@ -62,7 +65,7 @@ def _build_deps_layer(deps_dir: str) -> None:
         "--python-version", "3.12", "--implementation", "cp",
         "--target", py_dir, *API_DEPS,
     ]
-    subprocess.check_call(cmd)
+    subprocess.check_call(cmd)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit -- static argv from in-repo constants (sys.executable, fixed pip flags, API_DEPS); build-time only, no external input
     _trim(py_dir)
     with open(stamp, "w", encoding="utf-8") as f:
         f.write(sig)

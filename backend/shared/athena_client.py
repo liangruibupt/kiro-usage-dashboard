@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
@@ -635,11 +636,14 @@ def make_athena_runner(*, database: str, workgroup: str, region: str,
                 raise RuntimeError(f"Athena query {state}: {reason}")
             if time.time() > deadline:
                 raise TimeoutError(f"Athena query timed out after {timeout}s (qid={qid})")
-            time.sleep(poll_interval)
+            _POLL_WAIT.wait(poll_interval)
 
         return _collect_results(client, qid)
 
     return _run
+
+
+_POLL_WAIT = threading.Event()  # never set; .wait(t) is the poll delay
 
 
 def _collect_results(client, qid: str) -> list[Row]:

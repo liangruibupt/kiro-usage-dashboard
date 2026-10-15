@@ -21,7 +21,6 @@ import argparse
 import json
 import os
 import re
-import time
 
 import boto3
 
@@ -174,8 +173,8 @@ def deploy(image: str, user_pool_id: str, client_id: str, region: str,
     policy = build_policy(account, region, model_id, data["workgroup"],
                           data["curated_bucket"], data["results_bucket"], image)
     role_arn = ensure_role(iam, account, region, policy)
-    # IAM 传播
-    time.sleep(8)
+    # Wait until IAM reports the role (replaces a fixed sleep)
+    iam.get_waiter("role_exists").wait(RoleName=ROLE_NAME)
 
     issuer = f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}"
     authorizer = {
