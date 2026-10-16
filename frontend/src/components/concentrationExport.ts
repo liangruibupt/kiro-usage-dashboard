@@ -18,7 +18,7 @@ import type { ConcentrationMember, DateRange } from "../api/types";
  *   neutralizeFormula("\t=1")            === "'\t=1"   // 前导制表符
  *   neutralizeFormula("\r=1")            === "'\r=1"   // 前导回车
  *   neutralizeFormula("张伟")             === "张伟"      // 普通姓名不变
- *   neutralizeFormula("a@x.com")         === "a@x.com"  // @ 非首字符不触发
+ *   neutralizeFormula("a@example.com")         === "a@example.com"  // @ 非首字符不触发
  *   neutralizeFormula("")                === ""         // 空串不加前缀
  * 经 csvCell 后，带逗号/引号/换行/回车的中和结果仍会被正常引号包裹，例如：
  *   csvCell("=1,2")   === "\"'=1,2\""（公式中和 + 逗号引号包裹）

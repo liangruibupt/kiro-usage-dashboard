@@ -99,10 +99,11 @@ class ApiStack(Stack):
         data_stack.tier_table.grant_read_write_data(api_fn)
         # 模型倍率维护（ModelMultipliers · FEAT-001）：读写限定到该表 ARN。
         data_stack.multiplier_table.grant_read_write_data(api_fn)
-        # 调档通知邮件（R70）：SES 无细粒度资源级 ARN，故 resources=["*"]。
+        # 调档通知邮件（R70）：SendEmail/SendRawEmail 支持 identity 资源级权限，
+        # 限定到本账户/区域的 SES 已验证身份（未使用 configuration set）。
         api_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["ses:SendRawEmail", "ses:SendEmail"],
-            resources=["*"]))
+            resources=[f"arn:aws:ses:{self.region}:{self.account}:identity/*"]))
         # 管理员管理（/api/admin/*）：Cognito 管理权限，限定到本 User Pool ARN。
         api_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["cognito-idp:ListUsersInGroup", "cognito-idp:ListUsers",

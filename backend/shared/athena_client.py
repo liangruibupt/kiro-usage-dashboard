@@ -88,7 +88,7 @@ class Queries:
 
     约定：
     - 时间范围用 `date` 字符串列（'YYYY-MM-DD'）做 BETWEEN，命中分区裁剪由 Athena 处理。
-    - `identity_filter`：None=全量；否则形如 {"email": "a@b.com"}，强制注入 WHERE。
+    - `identity_filter`：None=全量；否则形如 {"email": "user@example.com"}，强制注入 WHERE。
     """
 
     def __init__(self, db: str = "kiro_usage",

@@ -55,7 +55,7 @@
 AWS CLI profile `<PROFILE>`。
 
 ### 1. 前置条件
-- **Node.js ≥ 18** 与 **AWS CDK CLI**（`npm install -g aws-cdk@2.1142.0` 或用 `npx aws-cdk@2.1142.0`）
+- **Node.js ≥ 20** 与 **AWS CDK CLI**（`npm install -g aws-cdk@2.1142.0` 或用 `npx aws-cdk@2.1142.0`）
 - **Python 3.12**
 - **AWS CLI v2**，并配置目标账户凭证：
   ```bash

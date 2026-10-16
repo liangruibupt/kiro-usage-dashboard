@@ -285,10 +285,13 @@ class DataStack(Stack):
         curated.grant_read(report_fn)
         results.grant_read_write(report_fn)
         dept_table.grant_read_data(report_fn)
-        # SES 发送 + 查验证状态（发件人/域需已在 SES 验证；发送前过滤未验证收件人）
+        # SES 发送：限定到本账户/区域的 SES 已验证身份（发件人/域需已在 SES 验证）
         report_fn.add_to_role_policy(iam.PolicyStatement(
-            actions=["ses:SendRawEmail", "ses:SendEmail",
-                     "ses:GetIdentityVerificationAttributes"], resources=["*"]))
+            actions=["ses:SendRawEmail", "ses:SendEmail"],
+            resources=[f"arn:aws:ses:{self.region}:{self.account}:identity/*"]))
+        # 查验证状态（发送前过滤未验证收件人）：该动作不支持资源级权限，只能 "*"
+        report_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["ses:GetIdentityVerificationAttributes"], resources=["*"]))
         # 收件人动态来源：读 Cognito admins 组成员（按池名查找 User Pool）
         report_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["cognito-idp:ListUserPools", "cognito-idp:ListUsersInGroup"],

@@ -123,8 +123,8 @@ def test_query_usage_accepts_all_allowed_combinations(q):
 
 
 def test_identity_filter_injected(q):
-    s = q.summary(identity_filter={"email": "Admin@Ex.com"}).sql
-    assert "lower(email) = 'admin@ex.com'" in s
+    s = q.summary(identity_filter={"email": "Admin@Example.com"}).sql
+    assert "lower(email) = 'admin@example.com'" in s
 
 
 def test_identity_filter_none_no_where(q):
